@@ -1,4 +1,10 @@
-use crate::{MainCamera, asset_loading::LoadResource};
+use crate::{
+    MainCamera,
+    asset_loading::LoadResource,
+    editor::spawn_tile,
+    io::{self, SaveFile},
+    map,
+};
 use bevy::{prelude::*, window::PrimaryWindow};
 
 /// Tilesize of a single tile in the sheet in pixel.
@@ -8,8 +14,10 @@ pub const TEXTURE_PATH: &str = "textures.png";
 
 pub fn plugin(app: &mut App) {
     app.init_resource::<Textures>()
+        .init_asset_loader::<io::SaveFileAssetLoader>()
+        .init_asset::<io::SaveFile>()
         .init_resource::<MousePosition>()
-        .add_systems(Update, update_mouse_position)
+        .add_systems(Update, (update_mouse_position, load_level))
         .load_resource::<Textures>();
 }
 #[derive(
@@ -113,4 +121,28 @@ fn update_mouse_position(
         return;
     };
     mouse_position.world_position = position;
+}
+fn load_level(
+    mut events: EventReader<AssetEvent<SaveFile>>,
+    mut commands: Commands,
+    save_files: Res<Assets<SaveFile>>,
+    tiles_q: Query<(Entity, &Sprite, &Transform, &LayerType)>,
+    textures: Res<map::Textures>,
+) {
+    for event in events.read() {
+        match event {
+            AssetEvent::LoadedWithDependencies { id } | AssetEvent::Modified { id } => {
+                for (e, _, _, _) in &tiles_q {
+                    commands.entity(e).despawn();
+                }
+                let level = save_files.get(*id).unwrap();
+                for (layer_type, tiles) in &level.layers {
+                    for tile in &tiles.tiles {
+                        commands.spawn(spawn_tile(tile.pos, &textures, tile.index, *layer_type));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
 }

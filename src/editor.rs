@@ -7,7 +7,8 @@ use bevy::{
 };
 
 use crate::{
-    GameState, io,
+    GameState,
+    io::{self, SaveFile},
     map::{self, LayerType, MousePosition, TILESIZE, Textures, convert_to_tile_grid},
     utils::iter_grid_rect,
     widget,
@@ -43,6 +44,7 @@ pub struct EditorMeta {
     /// You can select a tile region by pressing LMouse and dragging over a region
     current_selection_start: Option<Vec2>,
     layer_type: LayerType,
+    current_level: Handle<SaveFile>,
 }
 fn check_input(
     mouse: Res<ButtonInput<MouseButton>>,
@@ -111,7 +113,7 @@ enum EditorEvents {
     SaveLevel { name: String },
     LoadLevel { name: String },
 }
-fn spawn_tile(
+pub fn spawn_tile(
     tile_grid_position: IVec2,
     textures: &Textures,
     index: usize,
@@ -135,8 +137,10 @@ fn spawn_tile(
 fn process_editor_events(
     mut commands: Commands,
     mut events: EventReader<EditorEvents>,
+    mut editor_meta: ResMut<EditorMeta>,
+    asset_server: Res<AssetServer>,
+    mut asset_event_writer: EventWriter<AssetEvent<SaveFile>>,
     textures: Res<map::Textures>,
-    editor_meta: Res<EditorMeta>,
     tiles_q: Query<(Entity, &Sprite, &Transform, &LayerType)>,
 ) {
     for event in events.read() {
@@ -194,16 +198,12 @@ fn process_editor_events(
                 io::save(&level, &name);
             }
             EditorEvents::LoadLevel { name } => {
-                let level = io::load(&name).unwrap();
-                for (e, _, _, _) in &tiles_q {
-                    commands.entity(e).despawn();
+                let handle = asset_server.load::<SaveFile>(String::from("level/") + name + ".ron");
+                if asset_server.is_loaded_with_dependencies(handle.id()) {
+                    let _ = asset_event_writer.write(AssetEvent::Modified { id: handle.id() });
                 }
-                for (layer_type, tiles) in level.layers.into_iter() {
-                    for tile in tiles.tiles {
-                        commands.spawn(spawn_tile(tile.pos, &textures, tile.index, layer_type));
-                    }
-                }
-                println!("respawned");
+                info!("start loading new level '{name}'");
+                editor_meta.current_level = handle
             }
         }
     }
@@ -217,54 +217,9 @@ fn init_ui_overview(mut commands: Commands, editor_meta: Res<EditorMeta>) {
         },
         BackgroundColor(BLUE_900.into()),
         children![
-            (
-                Button,
-                Text::new(editor_meta.layer_type.name()),
-                OverviewButton::LayerType,
-                Outline::new(Val::Px(4.0), Val::ZERO, CRIMSON.into()),
-                Pickable {
-                    should_block_lower: false,
-                    ..default()
-                },
-                Node {
-                    width: Val::Percent(100.),
-                    height: Val::Percent(100.),
-                    margin: UiRect::all(Val::Px(4.)),
-                    ..default()
-                },
-            ),
-            (
-                Button,
-                Text::new("SAVE"),
-                OverviewButton::Save,
-                Outline::new(Val::Px(4.0), Val::ZERO, CRIMSON.into()),
-                Pickable {
-                    should_block_lower: false,
-                    ..default()
-                },
-                Node {
-                    width: Val::Percent(100.),
-                    height: Val::Percent(100.),
-                    margin: UiRect::all(Val::Px(4.)),
-                    ..default()
-                },
-            ),
-            (
-                Button,
-                Text::new("LOAD"),
-                OverviewButton::Load,
-                Outline::new(Val::Px(4.0), Val::ZERO, CRIMSON.into()),
-                Pickable {
-                    should_block_lower: false,
-                    ..default()
-                },
-                Node {
-                    width: Val::Percent(100.),
-                    height: Val::Percent(100.),
-                    margin: UiRect::all(Val::Px(4.)),
-                    ..default()
-                },
-            )
+            widget::overview_button(OverviewButton::LayerType, editor_meta.layer_type.name()),
+            widget::overview_button(OverviewButton::Save, "Save"),
+            widget::overview_button(OverviewButton::Load, "Load"),
         ],
     ));
 }
