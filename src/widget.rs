@@ -80,6 +80,7 @@ pub fn overview_button(overview_button: OverviewButton, text: impl Into<String>)
     (
         Button,
         Text::new(text),
+        TextLayout::new_with_justify(JustifyText::Center),
         overview_button,
         Outline::new(Val::Px(4.0), Val::ZERO, CRIMSON.into()),
         Pickable {

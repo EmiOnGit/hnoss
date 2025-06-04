@@ -7,6 +7,7 @@ license = "MIT OR Apache-2.0 OR CC0-1.0"
 [dependencies]
 
 bevy = {version = "0.16.0", features = ["wayland", "jpeg"]}
+rfd = "0.15.3"
 ron = "0.10.1"
 serde = { version = "1.0.219", features = ["derive"] }
 thiserror = "2.0.12"

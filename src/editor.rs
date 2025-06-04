@@ -1,5 +1,7 @@
+use std::path::PathBuf;
+
 use bevy::{
-    color::palettes::{self, css::CRIMSON, tailwind::BLUE_900},
+    color::palettes::{self, tailwind::BLUE_900},
     input::mouse::{MouseScrollUnit, MouseWheel},
     picking::hover::HoverMap,
     prelude::*,
@@ -110,8 +112,12 @@ fn current_tile_ui(
 #[derive(Event)]
 enum EditorEvents {
     SpawnTiles(Vec2, Vec2),
-    SaveLevel { name: String },
-    LoadLevel { name: String },
+    SaveLevel,
+    /// Name of the file without the extension so 'assets/level1.ron' becomes 'level1'
+    /// If [`Option::None`] is provided then a file dialog is opened
+    LoadLevel {
+        name: Option<String>,
+    },
 }
 pub fn spawn_tile(
     tile_grid_position: IVec2,
@@ -167,20 +173,18 @@ fn process_editor_events(
                 }
                 // spawn new tiles
                 for position in v {
-                    commands.spawn(spawn_tile(
-                        position,
-                        &textures,
-                        editor_meta
-                            .selected_tile
-                            .as_ref()
-                            .map(|atlas| atlas.index)
-                            .unwrap_or_default(),
-                        editor_meta.layer_type,
-                    ));
+                    if let Some(selected_tile) = &editor_meta.selected_tile {
+                        commands.spawn(spawn_tile(
+                            position,
+                            &textures,
+                            selected_tile.index,
+                            editor_meta.layer_type,
+                        ));
+                    }
                 }
             }
-            EditorEvents::SaveLevel { name } => {
-                info!("Saving level {name}");
+            EditorEvents::SaveLevel => {
+                info!("Saving level");
                 let mut level = io::SaveFile::default();
                 for (_e, sprite, trans, tile_layer_type) in &tiles_q {
                     let position = convert_to_tile_grid(trans.translation.xy());
@@ -195,15 +199,35 @@ fn process_editor_events(
                         index: texture_atlas.index,
                     })
                 }
-                io::save(&level, &name);
+                io::save(&level);
             }
             EditorEvents::LoadLevel { name } => {
-                let handle = asset_server.load::<SaveFile>(String::from("level/") + name + ".ron");
-                if asset_server.is_loaded_with_dependencies(handle.id()) {
-                    let _ = asset_event_writer.write(AssetEvent::Modified { id: handle.id() });
+                let handle = if let Some(name) = name {
+                    info!("start loading new level '{name}'");
+                    Some(asset_server.load::<SaveFile>(String::from("level/") + name + ".ron"))
+                } else {
+                    let fd = rfd::FileDialog::new()
+                        .add_filter("level", &["ron"])
+                        .set_directory("assets/");
+                    fd.pick_file().map(|path| {
+                        let path: PathBuf = path
+                            .iter()
+                            .skip_while(|p| p.to_str().unwrap() != "assets")
+                            .skip(1)
+                            .collect();
+                        info!("loading {path:?}");
+                        asset_server.load(path)
+                    })
+                };
+                if let Some(handle) = handle {
+                    // WARN bad practice but we have to fire a assetEvent for the [map::load_level()] to fire again
+                    if asset_server.is_loaded_with_dependencies(handle.id()) {
+                        let _ = asset_event_writer.write(AssetEvent::Modified { id: handle.id() });
+                    }
+                    editor_meta.current_level = handle;
+                } else {
+                    info!("loading failed");
                 }
-                info!("start loading new level '{name}'");
-                editor_meta.current_level = handle
             }
         }
     }
@@ -211,8 +235,10 @@ fn process_editor_events(
 fn init_ui_overview(mut commands: Commands, editor_meta: Res<EditorMeta>) {
     commands.spawn((
         Node {
-            width: Val::Percent(40.),
-            height: Val::Percent(10.),
+            left: Val::Percent(20.),
+            width: Val::Percent(60.),
+            height: Val::Percent(4.),
+            align_items: AlignItems::Center,
             ..default()
         },
         BackgroundColor(BLUE_900.into()),
@@ -245,6 +271,12 @@ fn init_ui_tile_selection(
                 })
                 .with_children(|parent| {
                     let atlas = texture_atlas_layouts.get(textures.layout.id()).unwrap();
+                    parent.spawn((
+                        widget::tile_container(Val::Percent(11.)),
+                        children![widget::tile_image(ImageNode::solid_color(
+                            palettes::basic::WHITE.into()
+                        ))],
+                    ));
                     for i in 0..atlas.len() / 2 {
                         parent.spawn((
                             widget::tile_container(Val::Percent(10.)),
@@ -288,6 +320,7 @@ fn overview_button_system(
         (With<Button>, Changed<Interaction>),
     >,
     mut editor_meta: ResMut<EditorMeta>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
     mut event_writer: EventWriter<EditorEvents>,
 ) {
     for (interaction, mut text, mut outline, overview_button) in &mut layer_node_q {
@@ -298,14 +331,15 @@ fn overview_button_system(
                     **text = editor_meta.layer_type.name().into();
                 }
                 OverviewButton::Save => {
-                    event_writer.write(EditorEvents::SaveLevel {
-                        name: "default".into(),
-                    });
+                    event_writer.write(EditorEvents::SaveLevel);
                 }
                 OverviewButton::Load => {
-                    event_writer.write(EditorEvents::LoadLevel {
-                        name: "default".into(),
-                    });
+                    let name = if keyboard_input.pressed(KeyCode::ShiftLeft) {
+                        Some("default".into())
+                    } else {
+                        None
+                    };
+                    event_writer.write(EditorEvents::LoadLevel { name });
                 }
             },
             Interaction::Hovered => match overview_button {
@@ -394,12 +428,8 @@ fn update_selected_tile(
                 let Ok(layout) = ui_images.get(*entity) else {
                     continue;
                 };
-                // the texture atlas is always of variant `Option::Some`
+                // the texture atlas is always of variant `Option::Some` or is the eraser
                 editor_meta.selected_tile = layout.texture_atlas.clone();
-                info!(
-                    "changed selected tile to {:?}",
-                    layout.texture_atlas.as_ref().unwrap().index
-                );
             }
         }
     }

@@ -3,11 +3,12 @@ use bevy::{
     asset::{AssetLoader, LoadContext, io::Reader},
     prelude::*,
 };
+use rfd::FileDialog;
 use ron::ser::PrettyConfig;
 use std::collections::HashMap;
 use thiserror::Error;
 
-pub fn save(file: &SaveFile, filename: &str) {
+pub fn save(file: &SaveFile) {
     let file_string = ron::ser::to_string_pretty(
         file,
         PrettyConfig::new()
@@ -15,11 +16,19 @@ pub fn save(file: &SaveFile, filename: &str) {
             .compact_structs(true),
     )
     .unwrap();
-    std::fs::write(
-        String::from("assets/level/") + filename + ".ron",
-        file_string,
-    )
-    .unwrap();
+
+    let path = FileDialog::new()
+        .add_filter("ron", &["ron"])
+        .set_directory("assets")
+        .set_file_name("level.ron")
+        .save_file();
+
+    if let Some(path) = path {
+        std::fs::write(path, file_string).unwrap();
+        info!("Saved successfully");
+    } else {
+        info!("Save was aborted since no file was selected");
+    }
 }
 
 #[derive(Asset, TypePath, serde::Serialize, serde::Deserialize, Default)]
