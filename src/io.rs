@@ -70,7 +70,7 @@ impl AssetLoader for SaveFileAssetLoader {
 pub struct Layer {
     pub tiles: Vec<Tile>,
 }
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy)]
 pub struct Tile {
     /// grid position
     pub pos: IVec2,

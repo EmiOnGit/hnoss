@@ -5,7 +5,7 @@ use bevy::{
     prelude::*,
 };
 
-use crate::editor::{OverviewButton, TileButton};
+use crate::editor::{NORMAL_BUTTON, OverviewButton, TileButton};
 /// A root UI node that fills the window and centers its content.
 pub fn ui_root(name: impl Into<Cow<'static, str>>) -> impl Bundle {
     (
@@ -63,7 +63,7 @@ pub fn tile_image(image_node: ImageNode) -> impl Bundle {
         TileButton,
         image_node,
         BackgroundColor(ANTIQUE_WHITE.into()),
-        Outline::new(Val::Px(4.0), Val::ZERO, CRIMSON.into()),
+        Outline::new(Val::Px(4.0), Val::ZERO, NORMAL_BUTTON.into()),
         Pickable {
             should_block_lower: false,
             ..default()

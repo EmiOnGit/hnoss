@@ -1,7 +1,10 @@
+use std::collections::HashMap;
+
 use crate::{
     MainCamera,
     asset_loading::LoadResource,
     editor::spawn_tile,
+    entity::{self, OnSpawnTrigger, Rule},
     io::{self, SaveFile},
     map,
 };
@@ -10,10 +13,12 @@ use bevy::{prelude::*, window::PrimaryWindow};
 /// Tilesize of a single tile in the sheet in pixel.
 /// Width and Height are both the same
 pub const TILESIZE: i32 = 16;
-pub const TEXTURE_PATH: &str = "textures.png";
+pub const MAIN_TEXTURE_PATH: &str = "textures.png";
+pub const ENTITY_TEXTURE_PATH: &str = "entities.png";
 
 pub fn plugin(app: &mut App) {
     app.init_resource::<Textures>()
+        .add_plugins(entity::plugin)
         .init_asset_loader::<io::SaveFileAssetLoader>()
         .init_asset::<io::SaveFile>()
         .init_resource::<MousePosition>()
@@ -27,6 +32,7 @@ pub enum LayerType {
     #[default]
     Bg,
     Fg,
+    Entities,
 }
 impl LayerType {
     pub fn name(&self) -> &'static str {
@@ -36,6 +42,7 @@ impl LayerType {
         match v {
             0 => Self::Bg,
             1 => Self::Fg,
+            2 => Self::Entities,
             _ => {
                 error!("Tried to construct layertype {v}. There are not that many variants.");
                 Self::Fg
@@ -43,12 +50,13 @@ impl LayerType {
         }
     }
     pub fn next(&self) -> Self {
-        LayerType::from_u8((*self as u8 + 1) % 2)
+        LayerType::from_u8((*self as u8 + 1) % 3)
     }
     pub fn z(&self) -> f32 {
         match self {
             LayerType::Bg => 0.,
             LayerType::Fg => 1.,
+            LayerType::Entities => 2.,
         }
     }
 }
@@ -57,28 +65,60 @@ impl Into<&'static str> for LayerType {
         match self {
             LayerType::Bg => "Background",
             LayerType::Fg => "Foreground",
+            LayerType::Entities => "Entities",
         }
     }
 }
+
+#[derive(Reflect)]
 pub struct TexturePack {
-    tex_path: &'static str,
-    tex: Handle<Image>,
-    layout: Handle<TextureAtlasLayout>,
-}
-#[derive(Resource, Asset, Reflect)]
-pub struct Textures {
-    pub textures: Handle<Image>,
+    pub texture: Handle<Image>,
     pub layout: Handle<TextureAtlasLayout>,
+    pub rules: Vec<Rule>,
+}
+#[derive(Resource, Asset, TypePath)]
+pub struct Textures {
+    pub pack: HashMap<LayerType, TexturePack>,
 }
 impl FromWorld for Textures {
     fn from_world(world: &mut World) -> Self {
-        let asset_server = world.resource::<AssetServer>();
-        let textures = asset_server.load(TEXTURE_PATH);
         let mut texture_atlas_layouts = world.resource_mut::<Assets<TextureAtlasLayout>>();
+        let main_layout =
+            TextureAtlasLayout::from_grid(UVec2::splat(TILESIZE as u32), 4, 4, None, None);
+        let entity_layout =
+            TextureAtlasLayout::from_grid(UVec2::splat(TILESIZE as u32), 8, 4, None, None);
+        let main_layout = texture_atlas_layouts.add(main_layout);
+        let entity_layout = texture_atlas_layouts.add(entity_layout);
+        let asset_server = world.resource::<AssetServer>();
+        let mut map = HashMap::new();
+        for layer in &[LayerType::Bg, LayerType::Fg, LayerType::Entities] {
+            match layer {
+                LayerType::Bg | LayerType::Fg => {
+                    let main_textures = asset_server.load(MAIN_TEXTURE_PATH);
+                    map.insert(
+                        *layer,
+                        TexturePack {
+                            texture: main_textures,
+                            layout: main_layout.clone(),
+                            rules: vec![Rule::new(0, OnSpawnTrigger::Collider)],
+                        },
+                    );
+                }
+                LayerType::Entities => {
+                    let texture = asset_server.load(ENTITY_TEXTURE_PATH);
+                    map.insert(
+                        *layer,
+                        TexturePack {
+                            texture,
+                            layout: entity_layout.clone(),
+                            rules: vec![Rule::new(0, OnSpawnTrigger::Fire)],
+                        },
+                    );
+                }
+            }
+        }
 
-        let layout = TextureAtlasLayout::from_grid(UVec2::splat(TILESIZE as u32), 4, 4, None, None);
-        let layout = texture_atlas_layouts.add(layout);
-        Textures { textures, layout }
+        Textures { pack: map }
     }
 }
 #[derive(Resource, Default)]
@@ -137,8 +177,17 @@ fn load_level(
                 }
                 let level = save_files.get(*id).unwrap();
                 for (layer_type, tiles) in &level.layers {
+                    let rules = &textures.pack[&layer_type].rules;
+                    println!("rules {:?}", rules);
                     for tile in &tiles.tiles {
-                        commands.spawn(spawn_tile(tile.pos, &textures, tile.index, *layer_type));
+                        let rule = rules.iter().find(|rule| rule.target_index == tile.index);
+                        let e = commands
+                            .spawn(spawn_tile(tile.pos, &textures, tile.index, *layer_type))
+                            .id();
+                        if let Some(rule) = rule {
+                            println!("HIHIODASH");
+                            commands.trigger_targets(*rule, e);
+                        }
                     }
                 }
             }

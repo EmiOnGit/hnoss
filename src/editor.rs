@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use bevy::{
-    color::palettes::{self, tailwind::BLUE_900},
+    color::palettes::{self, tailwind::BLUE_500},
     input::mouse::{MouseScrollUnit, MouseWheel},
     picking::hover::HoverMap,
     prelude::*,
@@ -15,12 +15,21 @@ use crate::{
     utils::iter_grid_rect,
     widget,
 };
+pub const NORMAL_BUTTON: Color = Color::srgb(0.15, 0.15, 0.15);
+pub const HOVERED_BUTTON: Color = Color::srgb(0.25, 0.25, 0.25);
+pub const PRESSED_BUTTON: Color = Color::srgb(0.35, 0.75, 0.35);
 pub fn plugin(app: &mut App) {
     app.add_event::<EditorEvents>()
         .init_resource::<EditorMeta>()
+        .add_event::<UiRespawnTrigger>()
+        .add_observer(init_ui_tile_selection)
         .add_systems(
             OnEnter(GameState::Running),
-            (init_ui_tile_selection, init_ui_overview),
+            (
+                init_ui,
+                // init_ui_tile_selection,
+                init_ui_overview,
+            ),
         )
         .add_systems(
             Update,
@@ -38,6 +47,9 @@ pub fn plugin(app: &mut App) {
             Update,
             (current_tile_ui, draw_selection_indicator).run_if(in_state(GameState::Running)),
         );
+}
+fn init_ui(mut commands: Commands) {
+    commands.trigger(UiRespawnTrigger::TileSelection);
 }
 #[derive(Resource, Default)]
 pub struct EditorMeta {
@@ -126,9 +138,9 @@ pub fn spawn_tile(
     layer_type: LayerType,
 ) -> impl Bundle {
     let mut sprite = Sprite::from_atlas_image(
-        textures.textures.clone(),
+        textures.pack[&layer_type].texture.clone(),
         TextureAtlas {
-            layout: textures.layout.clone(),
+            layout: textures.pack[&layer_type].layout.clone(),
             index,
         },
     );
@@ -140,6 +152,9 @@ pub fn spawn_tile(
         layer_type,
     )
 }
+/// Overrides the index and position of the tile when storing level to disk
+#[derive(Component)]
+pub struct SaveOverride(pub io::Tile);
 fn process_editor_events(
     mut commands: Commands,
     mut events: EventReader<EditorEvents>,
@@ -147,7 +162,13 @@ fn process_editor_events(
     asset_server: Res<AssetServer>,
     mut asset_event_writer: EventWriter<AssetEvent<SaveFile>>,
     textures: Res<map::Textures>,
-    tiles_q: Query<(Entity, &Sprite, &Transform, &LayerType)>,
+    tiles_q: Query<(
+        Entity,
+        &Sprite,
+        &Transform,
+        &LayerType,
+        Option<&SaveOverride>,
+    )>,
 ) {
     for event in events.read() {
         match event {
@@ -159,11 +180,14 @@ fn process_editor_events(
                 let layer_type = editor_meta.layer_type;
                 // despawn all tiles that already exist in that layer
                 let mut count = 0;
-                for (e, _, trans, tile_layer_type) in &tiles_q {
-                    if layer_type == *tile_layer_type
-                        && v.iter()
-                            .any(|new_pos| trans.translation.xy() == new_pos.as_vec2())
-                    {
+                let rect = Rect::new(
+                    start_pos.x as f32,
+                    start_pos.y as f32,
+                    end_pos.x as f32,
+                    end_pos.y as f32,
+                );
+                for (e, _, trans, tile_layer_type, _) in &tiles_q {
+                    if layer_type == *tile_layer_type && rect.contains(trans.translation.xy()) {
                         count += 1;
                         commands.entity(e).despawn();
                     }
@@ -172,25 +196,38 @@ fn process_editor_events(
                     info!("despawned {} tiles", count);
                 }
                 // spawn new tiles
-                for position in v {
-                    if let Some(selected_tile) = &editor_meta.selected_tile {
-                        commands.spawn(spawn_tile(
-                            position,
-                            &textures,
-                            selected_tile.index,
-                            editor_meta.layer_type,
-                        ));
+                let rules = &textures.pack[&editor_meta.layer_type].rules;
+                if let Some(selected_tile) = &editor_meta.selected_tile {
+                    let rule = rules
+                        .iter()
+                        .find(|rule| rule.target_index == selected_tile.index);
+                    for position in v {
+                        let e = commands
+                            .spawn(spawn_tile(
+                                position,
+                                &textures,
+                                selected_tile.index,
+                                editor_meta.layer_type,
+                            ))
+                            .id();
+                        if let Some(rule) = rule {
+                            commands.trigger_targets(*rule, e);
+                        }
                     }
                 }
             }
             EditorEvents::SaveLevel => {
                 info!("Saving level");
                 let mut level = io::SaveFile::default();
-                for (_e, sprite, trans, tile_layer_type) in &tiles_q {
-                    let position = convert_to_tile_grid(trans.translation.xy());
+                for (_e, sprite, trans, tile_layer_type, save_override) in &tiles_q {
                     let layer = level.layers.entry(*tile_layer_type).or_insert(io::Layer {
                         tiles: Vec::default(),
                     });
+                    if let Some(tile) = save_override {
+                        layer.tiles.push(tile.0);
+                        continue;
+                    }
+                    let position = convert_to_tile_grid(trans.translation.xy());
                     let Some(texture_atlas) = &sprite.texture_atlas else {
                         continue;
                     };
@@ -241,7 +278,7 @@ fn init_ui_overview(mut commands: Commands, editor_meta: Res<EditorMeta>) {
             align_items: AlignItems::Center,
             ..default()
         },
-        BackgroundColor(BLUE_900.into()),
+        BackgroundColor(BLUE_500.into()),
         children![
             widget::overview_button(OverviewButton::LayerType, editor_meta.layer_type.name()),
             widget::overview_button(OverviewButton::Save, "Save"),
@@ -250,13 +287,30 @@ fn init_ui_overview(mut commands: Commands, editor_meta: Res<EditorMeta>) {
     ));
 }
 
+#[derive(Event)]
+enum UiRespawnTrigger {
+    TileSelection,
+}
+#[derive(Component)]
+struct TileSelectionUiRoot;
 fn init_ui_tile_selection(
+    trigger: Trigger<UiRespawnTrigger>,
+    editor_meta: Res<EditorMeta>,
     mut commands: Commands,
+    q: Query<Entity, With<TileSelectionUiRoot>>,
     textures: Res<map::Textures>,
     texture_atlas_layouts: Res<Assets<TextureAtlasLayout>>,
 ) {
+    trigger.event();
+    // cleanup in case of redrawing
+    for e in &q {
+        commands.entity(e).despawn();
+    }
     commands
-        .spawn(widget::tile_selection_root(Val::Percent(88.)))
+        .spawn((
+            widget::tile_selection_root(Val::Percent(88.)),
+            TileSelectionUiRoot,
+        ))
         .with_children(|parent| {
             // scrolling node
             parent
@@ -270,6 +324,7 @@ fn init_ui_tile_selection(
                     ..default()
                 })
                 .with_children(|parent| {
+                    let textures = &textures.pack[&editor_meta.layer_type];
                     let atlas = texture_atlas_layouts.get(textures.layout.id()).unwrap();
                     parent.spawn((
                         widget::tile_container(Val::Percent(11.)),
@@ -282,14 +337,14 @@ fn init_ui_tile_selection(
                             widget::tile_container(Val::Percent(10.)),
                             children![
                                 widget::tile_image(ImageNode::from_atlas_image(
-                                    textures.textures.clone(),
+                                    textures.texture.clone(),
                                     TextureAtlas {
                                         layout: textures.layout.clone(),
                                         index: i * 2,
                                     },
                                 )),
                                 widget::tile_image(ImageNode::from_atlas_image(
-                                    textures.textures.clone(),
+                                    textures.texture.clone(),
                                     TextureAtlas {
                                         layout: textures.layout.clone(),
                                         index: i * 2 + 1,
@@ -302,10 +357,6 @@ fn init_ui_tile_selection(
         });
 }
 
-const NORMAL_BUTTON: Color = Color::srgb(0.15, 0.15, 0.15);
-const HOVERED_BUTTON: Color = Color::srgb(0.25, 0.25, 0.25);
-const PRESSED_BUTTON: Color = Color::srgb(0.35, 0.75, 0.35);
-
 #[derive(Component)]
 pub struct TileButton;
 #[derive(Component)]
@@ -315,6 +366,7 @@ pub enum OverviewButton {
     Load,
 }
 fn overview_button_system(
+    mut commands: Commands,
     mut layer_node_q: Query<
         (&Interaction, &mut Text, &mut Outline, &OverviewButton),
         (With<Button>, Changed<Interaction>),
@@ -329,6 +381,7 @@ fn overview_button_system(
                 OverviewButton::LayerType => {
                     editor_meta.layer_type = editor_meta.layer_type.next();
                     **text = editor_meta.layer_type.name().into();
+                    commands.trigger(UiRespawnTrigger::TileSelection);
                 }
                 OverviewButton::Save => {
                     event_writer.write(EditorEvents::SaveLevel);

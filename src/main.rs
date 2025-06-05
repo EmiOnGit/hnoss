@@ -1,5 +1,7 @@
+mod animation;
 mod asset_loading;
 mod editor;
+mod entity;
 mod io;
 mod map;
 mod screens;
@@ -24,6 +26,7 @@ fn app_plugin(app: &mut App) {
             })
             .set(ImagePlugin::default_nearest()),
         screens::plugin,
+        animation::plugin,
         asset_loading::plugin,
         map::plugin,
         editor::plugin,
@@ -33,7 +36,15 @@ fn app_plugin(app: &mut App) {
 fn init_camera(mut commands: Commands) {
     let mut projection = OrthographicProjection::default_2d();
     projection.scale = 1. / 4.;
-    commands.spawn((Camera2d, Projection::Orthographic(projection), MainCamera));
+    commands.spawn((
+        Camera2d,
+        Camera {
+            hdr: true,
+            ..default()
+        },
+        Projection::Orthographic(projection),
+        MainCamera,
+    ));
 }
 #[derive(Component)]
 struct MainCamera;

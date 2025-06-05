@@ -387,7 +387,11 @@
         (pos: (-32, 16), index: 3),
         (pos: (16, -64), index: 3),
     ]),
+    Entities: (tiles: [
+        (pos: (-32, 32), index: 0),
+    ]),
     Fg: (tiles: [
+        (pos: (-112, -96), index: 8),
         (pos: (48, -96), index: 8),
         (pos: (-32, 16), index: 12),
         (pos: (144, 32), index: 12),
@@ -410,6 +414,5 @@
         (pos: (-48, 48), index: 10),
         (pos: (48, -112), index: 12),
         (pos: (-112, -112), index: 12),
-        (pos: (-112, -96), index: 8),
     ]),
 })

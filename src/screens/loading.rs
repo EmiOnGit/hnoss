@@ -7,7 +7,7 @@ use bevy::{
 };
 
 const LOADING_BACKGROUND_COLOR: Color = Color::srgb(0.857, 0.857, 0.857);
-const LOADING_DURATION_SECS: f32 = 2.8;
+const LOADING_DURATION_SECS: f32 = 1.2;
 const LOADING_FADE_DURATION_SECS: f32 = 0.6;
 
 pub fn plugin(app: &mut App) {
