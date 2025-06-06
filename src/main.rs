@@ -1,9 +1,11 @@
 mod animation;
 mod asset_loading;
+mod combat;
 mod editor;
 mod entity;
 mod io;
 mod map;
+mod movement;
 mod screens;
 mod utils;
 mod widget;
@@ -26,6 +28,8 @@ fn app_plugin(app: &mut App) {
             })
             .set(ImagePlugin::default_nearest()),
         screens::plugin,
+        combat::plugin,
+        movement::plugin,
         animation::plugin,
         asset_loading::plugin,
         map::plugin,

@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use bevy::{
     color::palettes::{self, tailwind::BLUE_500},
     input::mouse::{MouseScrollUnit, MouseWheel},
@@ -10,8 +8,10 @@ use bevy::{
 
 use crate::{
     GameState,
+    entity::Player,
     io::{self, SaveFile},
     map::{self, LayerType, MousePosition, TILESIZE, Textures, convert_to_tile_grid},
+    movement::CameraController,
     utils::iter_grid_rect,
     widget,
 };
@@ -34,6 +34,7 @@ pub fn plugin(app: &mut App) {
         .add_systems(
             Update,
             (
+                debug_player,
                 check_input,
                 process_editor_events,
                 tile_button_system,
@@ -58,7 +59,7 @@ pub struct EditorMeta {
     /// You can select a tile region by pressing LMouse and dragging over a region
     current_selection_start: Option<Vec2>,
     layer_type: LayerType,
-    current_level: Handle<SaveFile>,
+    pub current_level: Handle<SaveFile>,
 }
 fn check_input(
     mouse: Res<ButtonInput<MouseButton>>,
@@ -122,7 +123,7 @@ fn current_tile_ui(
     );
 }
 #[derive(Event)]
-enum EditorEvents {
+pub enum EditorEvents {
     SpawnTiles(Vec2, Vec2),
     SaveLevel,
     /// Name of the file without the extension so 'assets/level1.ron' becomes 'level1'
@@ -243,18 +244,7 @@ fn process_editor_events(
                     info!("start loading new level '{name}'");
                     Some(asset_server.load::<SaveFile>(String::from("level/") + name + ".ron"))
                 } else {
-                    let fd = rfd::FileDialog::new()
-                        .add_filter("level", &["ron"])
-                        .set_directory("assets/");
-                    fd.pick_file().map(|path| {
-                        let path: PathBuf = path
-                            .iter()
-                            .skip_while(|p| p.to_str().unwrap() != "assets")
-                            .skip(1)
-                            .collect();
-                        info!("loading {path:?}");
-                        asset_server.load(path)
-                    })
+                    io::select_file().map(|path| asset_server.load(path))
                 };
                 if let Some(handle) = handle {
                     // WARN bad practice but we have to fire a assetEvent for the [map::load_level()] to fire again
@@ -269,7 +259,11 @@ fn process_editor_events(
         }
     }
 }
-fn init_ui_overview(mut commands: Commands, editor_meta: Res<EditorMeta>) {
+fn init_ui_overview(
+    mut commands: Commands,
+    editor_meta: Res<EditorMeta>,
+    camera_controller: Res<CameraController>,
+) {
     commands.spawn((
         Node {
             left: Val::Percent(20.),
@@ -283,6 +277,10 @@ fn init_ui_overview(mut commands: Commands, editor_meta: Res<EditorMeta>) {
             widget::overview_button(OverviewButton::LayerType, editor_meta.layer_type.name()),
             widget::overview_button(OverviewButton::Save, "Save"),
             widget::overview_button(OverviewButton::Load, "Load"),
+            widget::overview_button(
+                OverviewButton::ToggleCameraController,
+                camera_controller.to_string()
+            ),
         ],
     ));
 }
@@ -364,6 +362,7 @@ pub enum OverviewButton {
     LayerType,
     Save,
     Load,
+    ToggleCameraController,
 }
 fn overview_button_system(
     mut commands: Commands,
@@ -374,6 +373,7 @@ fn overview_button_system(
     mut editor_meta: ResMut<EditorMeta>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mut event_writer: EventWriter<EditorEvents>,
+    mut camera_controller: ResMut<CameraController>,
 ) {
     for (interaction, mut text, mut outline, overview_button) in &mut layer_node_q {
         match *interaction {
@@ -394,6 +394,10 @@ fn overview_button_system(
                     };
                     event_writer.write(EditorEvents::LoadLevel { name });
                 }
+                OverviewButton::ToggleCameraController => {
+                    camera_controller.toggle();
+                    **text = camera_controller.to_string();
+                }
             },
             Interaction::Hovered => match overview_button {
                 OverviewButton::LayerType => {
@@ -401,10 +405,9 @@ fn overview_button_system(
                     text.push_str(editor_meta.layer_type.next().name());
                     outline.color = HOVERED_BUTTON;
                 }
-                OverviewButton::Save => {
-                    outline.color = HOVERED_BUTTON;
-                }
-                OverviewButton::Load => {
+                OverviewButton::Save
+                | OverviewButton::Load
+                | OverviewButton::ToggleCameraController => {
                     outline.color = HOVERED_BUTTON;
                 }
             },
@@ -413,10 +416,9 @@ fn overview_button_system(
                     outline.color = NORMAL_BUTTON;
                     **text = editor_meta.layer_type.name().into();
                 }
-                OverviewButton::Save => {
-                    outline.color = NORMAL_BUTTON;
-                }
-                OverviewButton::Load => {
+                OverviewButton::Save
+                | OverviewButton::Load
+                | OverviewButton::ToggleCameraController => {
                     outline.color = NORMAL_BUTTON;
                 }
             },
@@ -516,6 +518,21 @@ pub fn update_scroll_position(
                     scroll_position.offset_y -= dy;
                 }
             }
+        }
+    }
+}
+fn debug_player(
+    keys: Res<ButtonInput<KeyCode>>,
+    players: Query<&Sprite, With<Player>>,
+    atlases: Res<Assets<TextureAtlasLayout>>,
+) {
+    if keys.just_pressed(KeyCode::KeyQ) {
+        for sprite in &players {
+            let atlas = atlases
+                .get(sprite.texture_atlas.as_ref().unwrap().layout.id())
+                .unwrap();
+            println!("{:?}", &sprite.texture_atlas);
+            println!("{:?}", &atlas);
         }
     }
 }

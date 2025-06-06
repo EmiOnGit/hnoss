@@ -3,19 +3,38 @@ use bevy::{
     asset::{AssetLoader, LoadContext, io::Reader},
     prelude::*,
 };
-use rfd::FileDialog;
 use ron::ser::PrettyConfig;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use thiserror::Error;
 
+#[cfg(target_arch = "wasm32")]
+pub fn select_file() -> Option<PathBuf> {
+    None
+}
+#[cfg(not(target_arch = "wasm32"))]
+pub fn select_file() -> Option<PathBuf> {
+    let fd = rfd::FileDialog::new()
+        .add_filter("level", &["ron"])
+        .set_directory("assets/");
+    fd.pick_file().map(|path| {
+        path.iter()
+            .skip_while(|p| p.to_str().unwrap() != "assets")
+            .skip(1)
+            .collect()
+    })
+}
+#[cfg(target_arch = "wasm32")]
 pub fn save(file: &SaveFile) {
-    let file_string = ron::ser::to_string_pretty(
-        file,
-        PrettyConfig::new()
-            // .compact_arrays(true)
-            .compact_structs(true),
-    )
-    .unwrap();
+    let file_string =
+        ron::ser::to_string_pretty(file, PrettyConfig::new().compact_structs(true)).unwrap();
+    println!("{file_string}");
+}
+#[cfg(not(target_arch = "wasm32"))]
+pub fn save(file: &SaveFile) {
+    use rfd::FileDialog;
+    let file_string =
+        ron::ser::to_string_pretty(file, PrettyConfig::new().compact_structs(true)).unwrap();
 
     let path = FileDialog::new()
         .add_filter("ron", &["ron"])

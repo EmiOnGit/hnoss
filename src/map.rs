@@ -13,8 +13,13 @@ use bevy::{prelude::*, window::PrimaryWindow};
 /// Tilesize of a single tile in the sheet in pixel.
 /// Width and Height are both the same
 pub const TILESIZE: i32 = 16;
+pub const PLAYERSIZE: UVec2 = UVec2::new(18, 26);
+pub const ENEMYSIZE: UVec2 = UVec2::new(18, 26);
 pub const MAIN_TEXTURE_PATH: &str = "textures.png";
 pub const ENTITY_TEXTURE_PATH: &str = "entities.png";
+pub const FIRE_TEXTURE_PATH: &str = "fire.png";
+pub const PLAYER_TEXTURE_PATH: &str = "char.png";
+pub const ENEMIES_TEXTURE_PATH: &str = "enemies.png";
 
 pub fn plugin(app: &mut App) {
     app.init_resource::<Textures>()
@@ -29,9 +34,9 @@ pub fn plugin(app: &mut App) {
     Component, Default, PartialEq, Eq, Clone, Copy, serde::Serialize, serde::Deserialize, Hash,
 )]
 pub enum LayerType {
-    #[default]
     Bg,
     Fg,
+    #[default]
     Entities,
 }
 impl LayerType {
@@ -79,6 +84,9 @@ pub struct TexturePack {
 #[derive(Resource, Asset, TypePath)]
 pub struct Textures {
     pub pack: HashMap<LayerType, TexturePack>,
+    pub player: TexturePack,
+    pub enemy: TexturePack,
+    pub fire: TexturePack,
 }
 impl FromWorld for Textures {
     fn from_world(world: &mut World) -> Self {
@@ -87,8 +95,15 @@ impl FromWorld for Textures {
             TextureAtlasLayout::from_grid(UVec2::splat(TILESIZE as u32), 4, 4, None, None);
         let entity_layout =
             TextureAtlasLayout::from_grid(UVec2::splat(TILESIZE as u32), 8, 4, None, None);
+        let fire_layout =
+            TextureAtlasLayout::from_grid(UVec2::splat(TILESIZE as u32), 8, 4, None, None);
+        let player_layout = TextureAtlasLayout::from_grid(PLAYERSIZE, 6, 3, None, None);
+        let enemy_layout = TextureAtlasLayout::from_grid(ENEMYSIZE, 6, 3, None, None);
         let main_layout = texture_atlas_layouts.add(main_layout);
         let entity_layout = texture_atlas_layouts.add(entity_layout);
+        let fire_layout = texture_atlas_layouts.add(fire_layout);
+        let player_layout = texture_atlas_layouts.add(player_layout);
+        let enemy_layout = texture_atlas_layouts.add(enemy_layout);
         let asset_server = world.resource::<AssetServer>();
         let mut map = HashMap::new();
         for layer in &[LayerType::Bg, LayerType::Fg, LayerType::Entities] {
@@ -111,14 +126,38 @@ impl FromWorld for Textures {
                         TexturePack {
                             texture,
                             layout: entity_layout.clone(),
-                            rules: vec![Rule::new(0, OnSpawnTrigger::Fire)],
+                            rules: vec![
+                                Rule::new(0, OnSpawnTrigger::Tower),
+                                Rule::new(1, OnSpawnTrigger::Player),
+                                Rule::new(2, OnSpawnTrigger::Enemy),
+                            ],
                         },
                     );
                 }
             }
         }
+        let player = TexturePack {
+            texture: asset_server.load(PLAYER_TEXTURE_PATH),
+            layout: player_layout,
+            rules: Vec::default(),
+        };
+        let enemy = TexturePack {
+            texture: asset_server.load(ENEMIES_TEXTURE_PATH),
+            layout: enemy_layout,
+            rules: Vec::default(),
+        };
+        let fire = TexturePack {
+            texture: asset_server.load(FIRE_TEXTURE_PATH),
+            layout: fire_layout,
+            rules: Vec::default(),
+        };
 
-        Textures { pack: map }
+        Textures {
+            pack: map,
+            player,
+            enemy,
+            fire,
+        }
     }
 }
 #[derive(Resource, Default)]
@@ -178,14 +217,12 @@ fn load_level(
                 let level = save_files.get(*id).unwrap();
                 for (layer_type, tiles) in &level.layers {
                     let rules = &textures.pack[&layer_type].rules;
-                    println!("rules {:?}", rules);
                     for tile in &tiles.tiles {
                         let rule = rules.iter().find(|rule| rule.target_index == tile.index);
                         let e = commands
                             .spawn(spawn_tile(tile.pos, &textures, tile.index, *layer_type))
                             .id();
                         if let Some(rule) = rule {
-                            println!("HIHIODASH");
                             commands.trigger_targets(*rule, e);
                         }
                     }
