@@ -30,10 +30,10 @@ fn explode_slimes(
                         .translation
                         .distance(tower_transform.translation)
                         < 100.
-                    {
-                        *tower_visibility = Visibility::Visible;
-                        tower.set_active(3.);
-                    }
+                {
+                    *tower_visibility = Visibility::Visible;
+                    tower.set_active(3.);
+                }
             }
             commands.entity(entity).despawn();
         }
