@@ -78,8 +78,8 @@ fn check_input(
             editor_meta.current_selection_start = Some(position);
         }
     }
-    if mouse.just_released(MouseButton::Left)
-        && let Some(start_pos) = editor_meta.current_selection_start {
+    if mouse.just_released(MouseButton::Left) {
+        if let Some(start_pos) = editor_meta.current_selection_start {
             if ui_q
                 .iter()
                 .any(|interaction| *interaction != Interaction::None)
@@ -91,6 +91,7 @@ fn check_input(
             }
             editor_meta.current_selection_start = None;
         }
+    }
 }
 fn draw_selection_indicator(
     mut my_gizmos: Gizmos<DefaultGizmoConfigGroup>,
@@ -461,9 +462,10 @@ fn tile_button_system(
     if new_pressed {
         for (_, image_node, mut outline) in &mut image_node_q {
             if editor_meta.selected_tile != image_node.texture_atlas
-                && outline.color == PRESSED_BUTTON {
-                    outline.color = NORMAL_BUTTON;
-                }
+                && outline.color == PRESSED_BUTTON
+            {
+                outline.color = NORMAL_BUTTON;
+            }
         }
     }
 }
