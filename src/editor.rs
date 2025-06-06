@@ -137,7 +137,7 @@ pub fn spawn_tile(
     index: usize,
     layer_type: LayerType,
 ) -> impl Bundle {
-    let mut sprite = Sprite::from_atlas_image(
+    let sprite = Sprite::from_atlas_image(
         textures.pack[&layer_type].texture.clone(),
         TextureAtlas {
             layout: textures.pack[&layer_type].layout.clone(),

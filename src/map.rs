@@ -173,10 +173,10 @@ impl MousePosition {
     pub fn to_tile_grid_lb(&self) -> IVec2 {
         convert_to_tile_grid(self.world_position)
     }
-    /// Converts the world position onto the center of the corresponding tile grid cell
-    pub fn to_tile_grid_center(&self) -> IVec2 {
-        self.to_tile_grid_lb() + IVec2::new(TILESIZE, TILESIZE) / 2
-    }
+    // Converts the world position onto the center of the corresponding tile grid cell
+    // pub fn to_tile_grid_center(&self) -> IVec2 {
+    //     self.to_tile_grid_lb() + IVec2::new(TILESIZE, TILESIZE) / 2
+    // }
 }
 /// Converts the world position onto the left bottom corner of the tile grid
 pub fn convert_to_tile_grid(position: Vec2) -> IVec2 {
