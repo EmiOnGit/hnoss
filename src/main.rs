@@ -9,6 +9,7 @@ mod movement;
 mod screens;
 mod utils;
 mod widget;
+use avian2d::prelude::RigidBody;
 use bevy::prelude::*;
 use screens::GameState;
 fn main() {
@@ -35,7 +36,7 @@ fn app_plugin(app: &mut App) {
         map::plugin,
         editor::plugin,
     ))
-    .add_systems(Startup, init_camera);
+    .add_systems(Startup, (init_camera, init_gizmo));
 }
 fn init_camera(mut commands: Commands) {
     let mut projection = OrthographicProjection::default_2d();
@@ -48,7 +49,12 @@ fn init_camera(mut commands: Commands) {
         },
         Projection::Orthographic(projection),
         MainCamera,
+        RigidBody::Kinematic,
     ));
+}
+fn init_gizmo(mut config_store: ResMut<GizmoConfigStore>) {
+    let (config, _) = config_store.config_mut::<DefaultGizmoConfigGroup>();
+    config.line.width += 2.;
 }
 #[derive(Component)]
 struct MainCamera;

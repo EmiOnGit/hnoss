@@ -3,7 +3,6 @@ use bevy::{
     input::mouse::{MouseScrollUnit, MouseWheel},
     picking::hover::HoverMap,
     prelude::*,
-    sprite::Anchor,
 };
 
 use crate::{
@@ -102,20 +101,20 @@ fn draw_selection_indicator(
     let Some(start_pos) = editor_meta.current_selection_start else {
         return;
     };
-    let cur_pos = mouse_position.to_tile_grid_center().as_vec2();
+    let cur_pos = mouse_position.to_tile_grid_lb().as_vec2();
     let center = (cur_pos + start_pos) / 2.;
     let size = cur_pos - start_pos;
     my_gizmos.rect_2d(
         Isometry2d::new(center, Rot2::IDENTITY),
         size,
-        palettes::tailwind::AMBER_600,
+        palettes::tailwind::BLUE_100,
     );
 }
 fn current_tile_ui(
     mut my_gizmos: Gizmos<DefaultGizmoConfigGroup>,
     mouse_position: Res<MousePosition>,
 ) {
-    let position = mouse_position.to_tile_grid_center();
+    let position = mouse_position.to_tile_grid_lb();
     my_gizmos.rect_2d(
         Isometry2d::new(position.as_vec2(), Rot2::IDENTITY),
         Vec2::new(TILESIZE as f32, TILESIZE as f32),
@@ -146,7 +145,6 @@ pub fn spawn_tile(
         },
     );
     let position = tile_grid_position.as_vec2().extend(layer_type.z());
-    sprite.anchor = Anchor::BottomLeft;
     (
         sprite.clone(),
         Transform::from_translation(position),
@@ -156,6 +154,8 @@ pub fn spawn_tile(
 /// Overrides the index and position of the tile when storing level to disk
 #[derive(Component)]
 pub struct SaveOverride(pub io::Tile);
+#[derive(Component)]
+pub struct RemoveOnLevelSwap;
 fn process_editor_events(
     mut commands: Commands,
     mut events: EventReader<EditorEvents>,

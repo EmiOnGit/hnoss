@@ -1,4 +1,11 @@
 (layers: {
+    Entities: (tiles: [
+        (pos: (-32, 32), index: 0),
+        (pos: (48, -96), index: 0),
+        (pos: (-112, -96), index: 0),
+        (pos: (0, 16), index: 1),
+        (pos: (80, 16), index: 2),
+    ]),
     Bg: (tiles: [
         (pos: (16, -64), index: 3),
         (pos: (128, -80), index: 14),
@@ -414,10 +421,5 @@
         (pos: (-96, -16), index: 12),
         (pos: (32, 0), index: 8),
         (pos: (-96, 0), index: 8),
-    ]),
-    Entities: (tiles: [
-        (pos: (-32, 32), index: 0),
-        (pos: (48, -96), index: 0),
-        (pos: (-112, -96), index: 0),
     ]),
 })

@@ -1,24 +1,63 @@
-use bevy::prelude::*;
+use std::f32::consts::PI;
+
+use avian2d::{
+    math::Vector,
+    prelude::{Gravity, LinearVelocity, PhysicsLayer},
+};
+use bevy::{
+    color::palettes::tailwind::{RED_400, YELLOW_400},
+    input::common_conditions::input_pressed,
+    prelude::*,
+};
 
 use crate::{
     MainCamera,
     animation::{AnimationConfig, EnemyAnimation, PlayerAnimation},
+    combat::Tame,
     entity::{Enemy, Player},
+    map::MousePosition,
     screens::GameState,
 };
+pub const DASH_RADIUS: f32 = 70.;
+pub const DASH_RECOGNITION_RADIUS: f32 = 30.;
+pub const DASH_IMPULSE: f32 = 600.;
+pub const DASH_DECLINE: f32 = 0.90;
 pub fn plugin(app: &mut App) {
-    app.init_resource::<CameraController>().add_systems(
-        Update,
-        (movement, enemy_movement).run_if(in_state(GameState::Running)),
-    );
+    app.add_plugins(avian2d::PhysicsPlugins::default().with_length_unit(1.))
+        // .add_plugins(avian2d::debug_render::PhysicsDebugPlugin::default())
+        .insert_resource(Gravity(Vector::ZERO))
+        .init_resource::<CameraController>()
+        .add_systems(
+            Update,
+            dash.run_if(input_pressed(KeyCode::Space).and(in_state(GameState::Running))),
+        )
+        .add_systems(
+            Update,
+            (movement, move_camera, check_dash, enemy_movement, dash_ui)
+                .run_if(in_state(GameState::Running)),
+        );
+}
+#[derive(PhysicsLayer, Default)]
+pub enum CollisionLayer {
+    #[default]
+    Default,
+    Block,
+    Enemy,
+    Player,
 }
 fn movement(
     controller: Res<CameraController>,
     keys: Res<ButtonInput<KeyCode>>,
-    mut cam: Single<&mut Transform, With<MainCamera>>,
+    cam_entity: Single<Entity, With<MainCamera>>,
+    mut velocities: Query<&mut LinearVelocity>,
     mut players: Query<
-        (&mut Transform, &mut AnimationConfig, &mut PlayerAnimation),
-        (With<Player>, Without<MainCamera>),
+        (
+            &mut AnimationConfig,
+            &mut PlayerAnimation,
+            &Player,
+            &ChildOf,
+        ),
+        Without<MainCamera>,
     >,
 ) {
     let mut dir = Vec2::ZERO;
@@ -36,8 +75,10 @@ fn movement(
         dir -= Vec2::Y * SPEED;
     }
     if dir == Vec2::ZERO {
-        for (_, _, mut animation) in &mut players {
+        for (_, mut animation, _, parent) in &mut players {
             if animation.eq(&PlayerAnimation::Running) {
+                let mut velocity = velocities.get_mut(parent.0).unwrap();
+                velocity.0 = Vec2::ZERO;
                 *animation = PlayerAnimation::Idle;
             }
         }
@@ -46,36 +87,77 @@ fn movement(
 
     match *controller {
         CameraController::Camera => {
-            cam.translation += dir.extend(0.);
+            let mut velocity = velocities.get_mut(*cam_entity).unwrap();
+            velocity.0 += dir;
         }
         CameraController::Player => {
-            for (mut player, mut animation_config, mut animation) in &mut players {
+            for (mut animation_config, mut animation, player, parent) in &mut players {
                 if animation.eq(&PlayerAnimation::Idle) {
                     *animation = PlayerAnimation::Running;
                 }
-                animation_config.flip_sprites = dir.x < 0.;
-                let dif = player.translation.xy() - cam.translation.xy();
-                if !MOVEMENT_RECT.contains(dif + dir) {
-                    cam.translation += dir.extend(0.);
+                if animation.eq(&PlayerAnimation::Dash) {
+                    continue;
                 }
-                player.translation += dir.extend(0.);
+                animation_config.flip_sprites = dir.x < 0.;
+                let mut velocity = velocities.get_mut(parent.0).unwrap();
+                velocity.0 = dir * player.speed;
             }
         }
     }
 }
+pub fn move_camera(
+    controller: Res<CameraController>,
+    mut cam: Query<(&mut LinearVelocity, &Transform), With<MainCamera>>,
+    player: Option<Single<(&GlobalTransform, &Player)>>,
+    time: Res<Time>,
+) {
+    if *controller != CameraController::Player {
+        return;
+    }
+    let (mut cam_velocity, cam_transform) = cam.single_mut().unwrap();
+    let Some(player) = player else {
+        cam_velocity.0 = Vec2::ZERO;
+        return;
+    };
+    let player_transform = player.0;
+    let delta = time.delta_secs();
+
+    let diff = player_transform.translation().xy() - cam_transform.translation.xy();
+    if !MOVEMENT_RECT.contains(diff) {
+        cam_velocity.0 = diff * player.1.speed * delta;
+        let outer_rect = MOVEMENT_RECT.inflate(1.3);
+        if !outer_rect.contains(diff) {
+            cam_velocity.0 = diff * player.1.speed * delta * 2.;
+        }
+    } else {
+        cam_velocity.0 = Vec2::ZERO;
+    }
+}
 pub fn enemy_movement(
     mut enemies: Query<
-        (&mut Transform, &mut AnimationConfig, &mut EnemyAnimation),
-        (With<Enemy>, Without<Player>),
+        (
+            &Transform,
+            &mut LinearVelocity,
+            &mut AnimationConfig,
+            &mut EnemyAnimation,
+            &Enemy,
+        ),
+        (Without<Player>, Without<Tame>),
     >,
-    players: Query<&Transform, With<Player>>,
+    players: Query<&GlobalTransform, With<Player>>,
+    time: Res<Time>,
 ) {
     let Ok(player) = players.single() else {
         return;
     };
-    for (mut transform, mut animation_config, mut enemy_animation) in &mut enemies {
-        let delta = player.translation - transform.translation;
+
+    let delta_time = time.delta_secs();
+    for (transform, mut linear_velocity, mut animation_config, mut enemy_animation, enemy) in
+        &mut enemies
+    {
+        let delta = player.translation().xy() - transform.translation.xy();
         if delta.length() > 100. {
+            linear_velocity.0 = Vec2::ZERO;
             if !enemy_animation.eq(&EnemyAnimation::Idle) {
                 *enemy_animation = EnemyAnimation::Idle;
             }
@@ -92,17 +174,19 @@ pub fn enemy_movement(
         }
         animation_config.flip_sprites = delta.x < 0.;
 
-        transform.translation += delta.normalize() * 0.2;
+        let normalized = delta.normalize();
+        println!("add velocity {normalized:?}");
+        linear_velocity.0 = normalized * delta_time * enemy.speed;
     }
 }
 const MOVEMENT_RECT: Rect = Rect {
-    min: Vec2::new(-60., -70.),
-    max: Vec2::new(60., 70.),
+    min: Vec2::new(-40., -50.),
+    max: Vec2::new(40., 50.),
 };
-#[derive(Default, Debug, Resource)]
+#[derive(Default, PartialEq, Debug, Resource)]
 pub enum CameraController {
-    #[default]
     Camera,
+    #[default]
     Player,
 }
 impl CameraController {
@@ -115,4 +199,80 @@ impl CameraController {
     pub fn to_string(&self) -> String {
         format!("{:?}", self)
     }
+}
+
+fn dash(
+    mouse_position: Res<MousePosition>,
+    players: Single<(&mut LinearVelocity, &GlobalTransform, &Children)>,
+    mut player_comp: Query<&mut PlayerAnimation, With<Player>>,
+    mut enemies: Query<(&GlobalTransform, &mut EnemyAnimation), (With<Enemy>, Without<Player>)>,
+) {
+    let enemy_pos = |trans: &GlobalTransform| trans.translation().xy() - Vec2::Y * 8.;
+    let (mut velocity, transform, children) = players.into_inner();
+    let Some(child) = children.get(0) else {
+        return;
+    };
+    let Ok(mut animation) = player_comp.get_mut(*child) else {
+        return;
+    };
+    if !animation.eq(&PlayerAnimation::Dash) {
+        let dash_point = mouse_position.dash_point;
+        let player_pos = transform.translation().xy();
+        let closest_enemy = enemies
+            .iter_mut()
+            .filter(|(enemy, _)| enemy_pos(enemy).distance(player_pos) <= DASH_RADIUS)
+            .min_by(|(enemy, _), (enemy2, _)| {
+                let d1 = enemy_pos(enemy).distance_squared(dash_point);
+                let d2 = enemy_pos(enemy2).distance_squared(dash_point);
+                d1.total_cmp(&d2)
+            });
+        let Some((closest_transform, mut closest_animation)) = closest_enemy else {
+            return;
+        };
+        if enemy_pos(closest_transform).distance_squared(dash_point)
+            > DASH_RECOGNITION_RADIUS * DASH_RECOGNITION_RADIUS
+        {
+            return;
+        }
+        let distance = enemy_pos(closest_transform) - player_pos;
+        *animation = PlayerAnimation::Dash;
+        *closest_animation = EnemyAnimation::Explode;
+        velocity.0 = distance.normalize_or_zero() * DASH_IMPULSE;
+    }
+}
+
+fn check_dash(
+    mut players: Query<&mut LinearVelocity>,
+    mut player_comp: Query<(&mut PlayerAnimation, &Player, &ChildOf)>,
+) {
+    for (mut animation, player, parent) in &mut player_comp {
+        if !animation.eq(&PlayerAnimation::Dash) {
+            continue;
+        }
+        let mut velo = players.get_mut(parent.0).unwrap();
+        velo.0 *= DASH_DECLINE;
+        if velo.0.length_squared() < player.speed * player.speed {
+            *animation = PlayerAnimation::Running;
+        }
+    }
+}
+fn dash_ui(
+    mut my_gizmos: Gizmos<DefaultGizmoConfigGroup>,
+    mouse_position: Res<MousePosition>,
+    player: Single<(&GlobalTransform, &PlayerAnimation), With<Player>>,
+) {
+    let (transform, animation) = player.into_inner();
+    let player_pos = transform.translation().xy();
+    let dash_point = mouse_position.dash_point;
+    let delta = player_pos - dash_point;
+    let color = match animation {
+        PlayerAnimation::Dash => RED_400,
+        _ => YELLOW_400,
+    };
+    my_gizmos.arc_2d(
+        Isometry2d::new(player_pos, Rot2::radians(delta.to_angle() + PI / 2. - 0.1)),
+        0.2,
+        delta.length(),
+        color,
+    );
 }

@@ -35,12 +35,14 @@ where
 pub enum PlayerAnimation {
     Idle,
     Running,
+    Dash,
 }
 impl Action for PlayerAnimation {
     fn as_animation(&self) -> AnimationConfig {
         match self {
             PlayerAnimation::Idle => AnimationConfig::new(0..4, 2),
             PlayerAnimation::Running => AnimationConfig::new(6..17, 8),
+            PlayerAnimation::Dash => AnimationConfig::new(6..17, 16),
         }
     }
 }

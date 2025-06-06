@@ -3,10 +3,11 @@ use std::collections::HashMap;
 use crate::{
     MainCamera,
     asset_loading::LoadResource,
-    editor::spawn_tile,
-    entity::{self, OnSpawnTrigger, Rule},
+    editor::{RemoveOnLevelSwap, spawn_tile},
+    entity::{self, OnSpawnTrigger, Player, Rule},
     io::{self, SaveFile},
     map,
+    movement::DASH_RADIUS,
 };
 use bevy::{prelude::*, window::PrimaryWindow};
 
@@ -163,6 +164,9 @@ impl FromWorld for Textures {
 #[derive(Resource, Default)]
 pub struct MousePosition {
     pub world_position: Vec2,
+    /// The point that can be used to find nearby enemies to dash to.
+    /// Not the maximum dash distance
+    pub dash_point: Vec2,
 }
 impl MousePosition {
     /// Converts the world position onto the left bottom corner of the tile grid
@@ -177,13 +181,14 @@ impl MousePosition {
 /// Converts the world position onto the left bottom corner of the tile grid
 pub fn convert_to_tile_grid(position: Vec2) -> IVec2 {
     IVec2::new(
-        (position.x as i32).div_euclid(TILESIZE) * TILESIZE,
-        (position.y as i32).div_euclid(TILESIZE) * TILESIZE,
+        (position.x as i32 + TILESIZE / 2).div_euclid(TILESIZE) * TILESIZE,
+        (position.y as i32 + TILESIZE / 2).div_euclid(TILESIZE) * TILESIZE,
     )
 }
 /// Updates the world position of the cursor every frame for other systems to use
 fn update_mouse_position(
     cameras: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
+    players: Option<Single<&GlobalTransform, (With<Player>, Without<Camera>)>>,
     windows: Query<&Window, With<PrimaryWindow>>,
     mut mouse_position: ResMut<MousePosition>,
 ) {
@@ -199,6 +204,16 @@ fn update_mouse_position(
     let Ok(position) = cam.viewport_to_world_2d(cam_transform, cursor) else {
         return;
     };
+    if let Some(player) = players {
+        let player_pos = player.translation().xy();
+        let mouse_diff = mouse_position.world_position - player_pos;
+        let dash_point = if mouse_diff.length_squared() > DASH_RADIUS * DASH_RADIUS {
+            player_pos + mouse_diff.normalize() * DASH_RADIUS
+        } else {
+            mouse_position.world_position
+        };
+        mouse_position.dash_point = dash_point;
+    }
     mouse_position.world_position = position;
 }
 fn load_level(
@@ -206,12 +221,16 @@ fn load_level(
     mut commands: Commands,
     save_files: Res<Assets<SaveFile>>,
     tiles_q: Query<(Entity, &Sprite, &Transform, &LayerType)>,
+    removable: Query<Entity, With<RemoveOnLevelSwap>>,
     textures: Res<map::Textures>,
 ) {
     for event in events.read() {
         match event {
             AssetEvent::LoadedWithDependencies { id } | AssetEvent::Modified { id } => {
                 for (e, _, _, _) in &tiles_q {
+                    commands.entity(e).despawn();
+                }
+                for e in &removable {
                     commands.entity(e).despawn();
                 }
                 let level = save_files.get(*id).unwrap();

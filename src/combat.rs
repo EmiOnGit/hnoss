@@ -12,6 +12,9 @@ pub fn plugin(app: &mut App) {
     );
 }
 
+#[derive(Component)]
+pub struct Tame;
+
 fn explode_slimes(
     mut commands: Commands,
     enemies: Query<(Entity, &Transform, &Sprite), With<Enemy>>,

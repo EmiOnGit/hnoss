@@ -1,9 +1,12 @@
 use crate::{
     animation::{self, AnimationConfig, EnemyAnimation, PlayerAnimation},
-    editor::SaveOverride,
+    combat::Tame,
+    editor::{RemoveOnLevelSwap, SaveOverride},
     io,
-    map::{self, convert_to_tile_grid},
+    map::{self, ENEMYSIZE, convert_to_tile_grid},
+    movement::CollisionLayer,
 };
+use avian2d::prelude::{self as avian, CollisionLayers};
 use bevy::prelude::*;
 
 pub fn plugin(app: &mut App) {
@@ -60,8 +63,17 @@ fn apply_rule(
         }
         OnSpawnTrigger::Collider => todo!(),
         OnSpawnTrigger::Player => {
+            let mut transform = transf.get_mut(entity).unwrap();
+            commands
+                .spawn((
+                    RemoveOnLevelSwap,
+                    avian::RigidBody::Kinematic,
+                    avian::Collider::rectangle(5.0, 5.0),
+                    *transform,
+                ))
+                .add_child(entity);
+            *transform = Transform::from_translation(Vec3::new(0., 10., 0.));
             info!("spawn player");
-            let transform = transf.get(entity).unwrap();
             let mut sprite = sprites.get_mut(entity).unwrap();
             sprite.image = textures.player.texture.clone();
             sprite.texture_atlas = Some(TextureAtlas {
@@ -114,14 +126,39 @@ fn tower_spawn() -> impl Bundle {
     )
 }
 #[derive(Component)]
-pub struct Player;
+pub struct Player {
+    pub speed: f32,
+}
+impl Player {
+    pub fn new(speed: f32) -> Player {
+        Player { speed }
+    }
+}
 fn player_spawn() -> impl Bundle {
-    (Player, animation::animation_bundle(PlayerAnimation::Idle))
+    (
+        Player::new(70.),
+        CollisionLayers::new(CollisionLayer::Player, CollisionLayer::Block),
+        animation::animation_bundle(PlayerAnimation::Idle),
+    )
 }
 #[derive(Component)]
-pub struct Enemy;
+pub struct Enemy {
+    pub speed: f32,
+}
 fn enemy_spawn() -> impl Bundle {
-    (Enemy, animation::animation_bundle(EnemyAnimation::Idle))
+    (
+        Enemy { speed: 3000. },
+        animation::animation_bundle(EnemyAnimation::Idle),
+        avian::RigidBody::Dynamic,
+        avian::LinearVelocity::ZERO,
+        CollisionLayers::new(
+            CollisionLayer::Enemy,
+            [CollisionLayer::Enemy, CollisionLayer::Block],
+        ),
+        avian::LockedAxes::ROTATION_LOCKED,
+        avian::Collider::rectangle(ENEMYSIZE.x as f32 / 2., 5.),
+        Tame,
+    )
 }
 #[derive(Component)]
 pub struct Flag;
