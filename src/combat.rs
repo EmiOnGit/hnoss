@@ -25,8 +25,8 @@ fn explode_slimes(
         // TODO better way
         if sprite.texture_atlas.as_ref().unwrap().index == 12 {
             for (mut tower, mut tower_visibility, tower_transform) in &mut towers {
-                if *tower_visibility == Visibility::Hidden {
-                    if enemy_transform
+                if *tower_visibility == Visibility::Hidden
+                    && enemy_transform
                         .translation
                         .distance(tower_transform.translation)
                         < 100.
@@ -34,7 +34,6 @@ fn explode_slimes(
                         *tower_visibility = Visibility::Visible;
                         tower.set_active(3.);
                     }
-                }
             }
             commands.entity(entity).despawn();
         }

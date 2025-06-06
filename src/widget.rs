@@ -63,7 +63,7 @@ pub fn tile_image(image_node: ImageNode) -> impl Bundle {
         TileButton,
         image_node,
         BackgroundColor(ANTIQUE_WHITE.into()),
-        Outline::new(Val::Px(4.0), Val::ZERO, NORMAL_BUTTON.into()),
+        Outline::new(Val::Px(4.0), Val::ZERO, NORMAL_BUTTON),
         Pickable {
             should_block_lower: false,
             ..default()

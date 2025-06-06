@@ -1,4 +1,4 @@
-use std::f32::consts::PI;
+use std::{f32::consts::PI, fmt};
 
 use avian2d::{
     math::Vector,
@@ -196,8 +196,13 @@ impl CameraController {
             CameraController::Player => *self = CameraController::Camera,
         }
     }
-    pub fn to_string(&self) -> String {
-        format!("{:?}", self)
+}
+impl fmt::Display for CameraController {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            CameraController::Camera => "Camera Controller",
+            CameraController::Player => "Player Controller",
+        })
     }
 }
 
@@ -209,7 +214,7 @@ fn dash(
 ) {
     let enemy_pos = |trans: &GlobalTransform| trans.translation().xy() - Vec2::Y * 8.;
     let (mut velocity, transform, children) = players.into_inner();
-    let Some(child) = children.get(0) else {
+    let Some(child) = children.first() else {
         return;
     };
     let Ok(mut animation) = player_comp.get_mut(*child) else {

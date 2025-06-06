@@ -66,9 +66,9 @@ impl LayerType {
         }
     }
 }
-impl Into<&'static str> for LayerType {
-    fn into(self) -> &'static str {
-        match self {
+impl From<LayerType> for &'static str {
+    fn from(val: LayerType) -> Self {
+        match val {
             LayerType::Bg => "Background",
             LayerType::Fg => "Foreground",
             LayerType::Entities => "Entities",
@@ -235,7 +235,7 @@ fn load_level(
                 }
                 let level = save_files.get(*id).unwrap();
                 for (layer_type, tiles) in &level.layers {
-                    let rules = &textures.pack[&layer_type].rules;
+                    let rules = &textures.pack[layer_type].rules;
                     for tile in &tiles.tiles {
                         let rule = rules.iter().find(|rule| rule.target_index == tile.index);
                         let e = commands
