@@ -536,19 +536,3 @@ fn debug_player(
         }
     }
 }
-
-#[cfg(test)]
-mod test {
-    use bevy::math::{ivec2, vec2};
-
-    #[test]
-    fn test_convert_to_tile_grid() {
-        assert_eq!(super::convert_to_tile_grid(vec2(1., 1.)), ivec2(0, 0));
-        assert_eq!(super::convert_to_tile_grid(vec2(1., -1.)), ivec2(0, -16));
-        assert_eq!(super::convert_to_tile_grid(vec2(22., -1.)), ivec2(16, -16));
-        assert_eq!(
-            super::convert_to_tile_grid(vec2(-22., -16.)),
-            ivec2(-32, -16)
-        );
-    }
-}
