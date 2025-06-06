@@ -10,6 +10,7 @@ mod screens;
 mod utils;
 mod widget;
 use avian2d::prelude::RigidBody;
+use bevy::asset::AssetMetaCheck;
 use bevy::prelude::*;
 use screens::GameState;
 fn main() {
@@ -25,6 +26,10 @@ fn app_plugin(app: &mut App) {
                     ..default()
                 }
                 .into(),
+                ..default()
+            })
+            .set(AssetPlugin {
+                meta_check: AssetMetaCheck::Never,
                 ..default()
             })
             .set(ImagePlugin::default_nearest()),
