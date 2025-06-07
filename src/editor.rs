@@ -190,7 +190,7 @@ fn process_editor_events(
                     }
                 }
                 for (e, tile_layer_type, override_tile, parent) in &override_tiles {
-                    if layer_type == *tile_layer_type && rect.contains(override_tile.0.pos.into()) {
+                    if layer_type == *tile_layer_type && rect.contains(override_tile.0.pos) {
                         if let Some(parent) = parent {
                             commands.entity(parent.0).despawn();
                         } else {

@@ -6,7 +6,7 @@ use avian2d::{
 };
 use bevy::{
     color::palettes::tailwind::{RED_400, YELLOW_400},
-    input::common_conditions::{input_just_pressed, input_pressed},
+    input::common_conditions::input_just_pressed,
     prelude::*,
 };
 
