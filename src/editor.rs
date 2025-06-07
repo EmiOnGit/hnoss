@@ -75,19 +75,21 @@ fn check_input(
             editor_meta.current_selection_start = Some(position);
         }
     }
-    if mouse.just_released(MouseButton::Left)
-        && let Some(start_pos) = editor_meta.current_selection_start {
-            if ui_q
-                .iter()
-                .any(|interaction| *interaction != Interaction::None)
-            {
-                info!("ignore mouserelease because of ui interaction");
-            } else {
-                let current_pos = mouse_position.world_position;
-                event_writer.write(EditorEvents::SpawnTiles(start_pos, current_pos));
-            }
-            editor_meta.current_selection_start = None;
+    if mouse.just_released(MouseButton::Left) {
+        let Some(start_pos) = editor_meta.current_selection_start else {
+            return;
+        };
+        if ui_q
+            .iter()
+            .any(|interaction| *interaction != Interaction::None)
+        {
+            info!("ignore mouserelease because of ui interaction");
+        } else {
+            let current_pos = mouse_position.world_position;
+            event_writer.write(EditorEvents::SpawnTiles(start_pos, current_pos));
         }
+        editor_meta.current_selection_start = None;
+    }
 }
 fn draw_selection_indicator(
     mut my_gizmos: Gizmos<DefaultGizmoConfigGroup>,

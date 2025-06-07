@@ -88,10 +88,11 @@ impl AnimationConfig {
 }
 fn execute_animations(time: Res<Time>, mut query: Query<(&mut AnimationConfig, &mut Sprite)>) {
     for (mut config, mut sprite) in &mut query {
-        if config.is_new()
-            && let Some(atlas) = &mut sprite.texture_atlas {
+        if let Some(atlas) = &mut sprite.texture_atlas {
+            if config.is_new() {
                 atlas.index = config.index.start;
             }
+        }
         if sprite.flip_x != config.flip_sprites {
             sprite.flip_x = config.flip_sprites;
         }
@@ -99,14 +100,16 @@ fn execute_animations(time: Res<Time>, mut query: Query<(&mut AnimationConfig, &
         config.frame_timer.tick(time.delta());
 
         // If it has been displayed for the user-defined amount of time (fps)...
-        if config.frame_timer.just_finished()
-            && let Some(atlas) = &mut sprite.texture_atlas {
-                if atlas.index >= config.index.end - 1 {
-                    atlas.index = config.index.start;
-                } else {
-                    atlas.index += 1;
-                }
-                config.frame_timer.reset();
+        if config.frame_timer.just_finished() {
+            let Some(atlas) = &mut sprite.texture_atlas else {
+                continue;
+            };
+            if atlas.index >= config.index.end - 1 {
+                atlas.index = config.index.start;
+            } else {
+                atlas.index += 1;
             }
+            config.frame_timer.reset();
+        }
     }
 }
