@@ -40,18 +40,9 @@ fn spawn_main_menu(mut commands: Commands, textures: Res<Textures>) {
                     position_type: PositionType::Absolute,
                     ..default()
                 },
-                ImageNode::new(asset_server.load_with_settings(
-                    // This should be an embedded asset for instant loading, but that is
-                    // currently [broken on Windows Wasm builds](https://github.com/bevyengine/bevy/issues/14246).
-                    "goblin_splash.jpg",
-                    |settings: &mut ImageLoaderSettings| {
-                        // Make an exception for the splash image in case
-                        // `ImagePlugin::default_nearest()` is used for pixel art.
-                        settings.sampler = ImageSampler::linear();
-                    },
-                ))
+                ImageNode::new(textures.main_menu_image.clone()),
             ),
-            widget::button("Play", enter_loading_or_gameplay_screen),
+            widget::button("Play", enter_gamplay_screen),
             widget::button("Credits", open_credits_menu),
         ],
     ));
