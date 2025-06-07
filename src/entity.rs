@@ -135,11 +135,19 @@ fn apply_rule(
             ));
         }
     };
-    warn!("apply {trigger:?} entity {entity:?}");
 }
-#[derive(Component, Default)]
+#[derive(Component)]
 pub struct Tower {
     pub active: Option<Timer>,
+    pub activatable: bool,
+}
+impl Default for Tower {
+    fn default() -> Self {
+        Tower {
+            active: None,
+            activatable: true,
+        }
+    }
 }
 impl Tower {
     pub fn set_active(&mut self, active_time_sec: f32) {
