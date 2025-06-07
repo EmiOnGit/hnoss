@@ -23,6 +23,7 @@ fn app_plugin(app: &mut App) {
             .set(WindowPlugin {
                 primary_window: Window {
                     title: "Hnoss".to_string(),
+                    fit_canvas_to_parent: true,
                     ..default()
                 }
                 .into(),

@@ -55,6 +55,7 @@ pub struct EditorMeta {
     current_selection_start: Option<Vec2>,
     layer_type: LayerType,
     pub current_level: Handle<SaveFile>,
+    pub current_level_index: usize,
     pub edit_mode: bool,
 }
 fn check_input(
@@ -456,6 +457,7 @@ fn overview_button_system(
                     if cfg!(target_arch = "wasm32") {
                         name = Some("default".into());
                     }
+                    editor_meta.current_level_index = 0;
                     event_writer.write(EditorEvents::LoadLevel { name });
                 }
                 OverviewButton::EditMode => {

@@ -30,7 +30,7 @@ pub fn plugin(app: &mut App) {
     // gamestate transition
     app.add_systems(
         Update,
-        enter_gameplay_screen.run_if(
+        enter_menu_screen.run_if(
             in_state(GameState::AssetLoading)
                 .and(asset_loading::all_assets_loaded)
                 .and(check_loading_timer),
@@ -39,19 +39,19 @@ pub fn plugin(app: &mut App) {
     // Exit the splash screen early if the player hits escape.
     .add_systems(
         Update,
-        enter_gameplay_screen.run_if(
+        enter_menu_screen.run_if(
             in_state(GameState::AssetLoading)
                 .and(input_just_pressed(KeyCode::Escape))
                 .and(asset_loading::all_assets_loaded),
         ),
     );
 }
-fn enter_gameplay_screen(mut commands: Commands) {
+fn enter_menu_screen(mut commands: Commands) {
     info!(
         "finished loading assets
         start gameloop"
     );
-    commands.set_state(GameState::Running);
+    commands.set_state(GameState::MainMenu);
 }
 fn spawn_loading_screen(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn((

@@ -20,12 +20,12 @@ use crate::{
     screens::GameState,
 };
 pub const DASH_RADIUS: f32 = 70.;
-pub const DASH_RECOGNITION_RADIUS: f32 = 30.;
+pub const DASH_RECOGNITION_RADIUS: f32 = 50.;
 pub const DASH_IMPULSE: f32 = 500.;
 pub const DASH_DECLINE: f32 = 0.90;
 pub fn plugin(app: &mut App) {
     app.add_plugins(avian2d::PhysicsPlugins::default().with_length_unit(1.))
-        .add_plugins(avian2d::debug_render::PhysicsDebugPlugin::default())
+        // .add_plugins(avian2d::debug_render::PhysicsDebugPlugin::default())
         .insert_resource(Gravity(Vector::ZERO))
         .add_systems(
             Update,

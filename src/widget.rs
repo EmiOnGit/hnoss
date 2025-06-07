@@ -2,6 +2,7 @@ use std::borrow::Cow;
 
 use bevy::{
     color::palettes::css::{ANTIQUE_WHITE, CRIMSON, PALE_GOLDENROD},
+    ecs::{spawn::SpawnWith, system::IntoObserverSystem},
     prelude::*,
 };
 
@@ -22,6 +23,63 @@ pub fn ui_root(name: impl Into<Cow<'static, str>>) -> impl Bundle {
         },
         // Don't block picking events for other UI roots.
         Pickable::IGNORE,
+    )
+}
+/// A large rounded button with text and an action defined as an [`Observer`].
+pub fn button<E, B, M, I>(text: impl Into<String>, action: I) -> impl Bundle
+where
+    E: Event,
+    B: Bundle,
+    I: IntoObserverSystem<E, B, M>,
+{
+    button_base(
+        text,
+        action,
+        (
+            Node {
+                width: Val::Px(220.0),
+                height: Val::Px(50.0),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            BorderRadius::MAX,
+        ),
+    )
+}
+/// A simple button with text and an action defined as an [`Observer`]. The button's layout is provided by `button_bundle`.
+fn button_base<E, B, M, I>(
+    text: impl Into<String>,
+    action: I,
+    button_bundle: impl Bundle,
+) -> impl Bundle
+where
+    E: Event,
+    B: Bundle,
+    I: IntoObserverSystem<E, B, M>,
+{
+    let text = text.into();
+    let action = IntoObserverSystem::into_system(action);
+    (
+        Name::new("Button"),
+        Node::default(),
+        Children::spawn(SpawnWith(|parent: &mut ChildSpawner| {
+            parent
+                .spawn((
+                    Name::new("Button Inner"),
+                    Button,
+                    BackgroundColor(NORMAL_BUTTON),
+                    children![(
+                        Name::new("Button Text"),
+                        Text(text),
+                        TextFont::from_font_size(40.0),
+                        // Don't bubble picking events from the text up to the button.
+                        Pickable::IGNORE,
+                    )],
+                ))
+                .insert(button_bundle)
+                .observe(action);
+        })),
     )
 }
 pub fn tile_selection_root(left: Val) -> impl Bundle {
@@ -93,5 +151,20 @@ pub fn overview_button(overview_button: OverviewButton, text: impl Into<String>)
             margin: UiRect::all(Val::Px(4.)),
             ..default()
         },
+    )
+}
+pub fn header(text: impl Into<String>) -> impl Bundle {
+    (
+        Name::new("Header"),
+        Text(text.into()),
+        TextFont::from_font_size(40.0),
+    )
+}
+/// A simple text label.
+pub fn label(text: impl Into<String>) -> impl Bundle {
+    (
+        Name::new("Label"),
+        Text(text.into()),
+        TextFont::from_font_size(24.0),
     )
 }

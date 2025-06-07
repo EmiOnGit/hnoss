@@ -59,9 +59,17 @@ fn check_tower(
         }
     }
     if all_lit {
-        let handle = asset_server.load::<SaveFile>(String::from("level/") + "level1" + ".ron");
+        if editor_meta.current_level_index > 100 {
+            println!("WON");
+            return;
+        }
+
+        editor_meta.current_level_index += 1;
+        let number = editor_meta.current_level_index.to_string();
+
+        let handle =
+            asset_server.load::<SaveFile>(String::from("level/") + "level" + &number + ".ron");
         editor_meta.current_level = handle;
-        println!("WON");
     }
 }
 

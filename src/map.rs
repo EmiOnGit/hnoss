@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::{
     MainCamera,
     asset_loading::LoadResource,
-    editor::{RemoveOnLevelSwap, spawn_tiled},
+    editor::{EditorEvents, RemoveOnLevelSwap, spawn_tiled},
     entity::{self, OnSpawnTrigger, Player, Rule},
     io::{self, SaveFile, Tile},
     map,
@@ -11,7 +11,11 @@ use crate::{
     screens::GameState,
     utils,
 };
-use bevy::{prelude::*, window::PrimaryWindow};
+use bevy::{
+    image::{ImageLoaderSettings, ImageSampler},
+    prelude::*,
+    window::PrimaryWindow,
+};
 use bevy_ecs_tilemap::{
     TilemapBundle,
     anchor::TilemapAnchor,
@@ -29,6 +33,7 @@ pub const ENTITY_TEXTURE_PATH: &str = "entities.png";
 pub const FIRE_TEXTURE_PATH: &str = "fire.png";
 pub const PLAYER_TEXTURE_PATH: &str = "char.png";
 pub const ENEMIES_TEXTURE_PATH: &str = "enemies.png";
+const MAIN_MENU_IMAGE: &str = "goblin_splash.jpg";
 pub const TILEMAP_OFFSET: Vec2 = Vec2::new(-100., -100.);
 pub const TILEMAP_ANCHOR: TilemapAnchor = TilemapAnchor::BottomLeft;
 
@@ -41,10 +46,14 @@ pub fn plugin(app: &mut App) {
         .init_asset::<io::SaveFile>()
         .init_resource::<MousePosition>()
         .add_systems(Update, (update_mouse_position, load_level))
-        .add_systems(OnEnter(GameState::Running), init_map_layers)
+        .add_systems(OnEnter(GameState::Running), init_map)
         .load_resource::<Textures>();
 }
-fn init_map_layers(mut commands: Commands, textures: Res<map::Textures>) {
+fn init_map(
+    mut commands: Commands,
+    textures: Res<map::Textures>,
+    mut event_writer: EventWriter<EditorEvents>,
+) {
     let tile_size = TilemapTileSize {
         x: TILESIZE as f32,
         y: TILESIZE as f32,
@@ -71,6 +80,9 @@ fn init_map_layers(mut commands: Commands, textures: Res<map::Textures>) {
             })
             .insert(layer_type);
     }
+    event_writer.write(EditorEvents::LoadLevel {
+        name: Some("default".into()),
+    });
 }
 #[derive(
     Component, Default, PartialEq, Eq, Clone, Copy, serde::Serialize, serde::Deserialize, Hash,
@@ -129,6 +141,7 @@ pub struct Textures {
     pub player: TexturePack,
     pub enemy: TexturePack,
     pub fire: TexturePack,
+    pub main_menu_image: Handle<Image>,
 }
 impl FromWorld for Textures {
     fn from_world(world: &mut World) -> Self {
@@ -194,11 +207,18 @@ impl FromWorld for Textures {
             rules: Vec::default(),
         };
 
+        let main_menu_image = asset_server.load_with_settings(
+            MAIN_MENU_IMAGE,
+            |settings: &mut ImageLoaderSettings| {
+                settings.sampler = ImageSampler::linear();
+            },
+        );
         Textures {
             pack: map,
             player,
             enemy,
             fire,
+            main_menu_image,
         }
     }
 }
@@ -222,7 +242,7 @@ pub fn convert_to_tile_pos(position: Vec2) -> TilePos {
     let mut real_pos = position - TILEMAP_OFFSET;
     real_pos.x = real_pos.x.max(0.);
     real_pos.y = real_pos.y.max(0.);
-    
+
     TilePos::new(
         real_pos.x as u32 / TILESIZE as u32,
         real_pos.y as u32 / TILESIZE as u32,
