@@ -14,15 +14,14 @@ ron = "0.10.1"
 serde = { version = "1.0.219", features = ["derive"] }
 thiserror = "2.0.12"
 [features]
-# default = ["dev_native"]
-default = []
+default = ["dev_native"]
+# default = []
 dev_native = [
   "bevy/file_watcher",
   "bevy/embedded_watcher",
   "bevy/dynamic_linking",
   "bevy/bevy_dev_tools",
   "bevy/track_location",
-  "bevy/trace"
   ]
 
 
@@ -63,10 +62,10 @@ opt-level = 3
 debug=true
 # Compile the entire crate as one unit.
 # Slows compile times, marginal improvements.
-# codegen-units = 1
+codegen-units = 1
 # Do a second optimization pass over the entire program, including dependencies.
 # Slows compile times, marginal improvements.
-# lto = "thin"
+lto = "thin"
 
 # This profile will be used by `bevy run web` automatically.
 [profile.web-release]

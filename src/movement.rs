@@ -6,14 +6,14 @@ use avian2d::{
 };
 use bevy::{
     color::palettes::tailwind::{RED_400, YELLOW_400},
-    input::common_conditions::input_pressed,
+    input::common_conditions::{input_just_pressed, input_pressed},
     prelude::*,
 };
 
 use crate::{
     MainCamera,
     animation::{AnimationConfig, EnemyAnimation, PlayerAnimation},
-    combat::Tame,
+    combat::{DashTargetedBy, DashTargeting, Tame},
     editor::EditorMeta,
     entity::{Enemy, Player},
     map::MousePosition,
@@ -21,22 +21,22 @@ use crate::{
 };
 pub const DASH_RADIUS: f32 = 70.;
 pub const DASH_RECOGNITION_RADIUS: f32 = 30.;
-pub const DASH_IMPULSE: f32 = 600.;
+pub const DASH_IMPULSE: f32 = 500.;
 pub const DASH_DECLINE: f32 = 0.90;
 pub fn plugin(app: &mut App) {
     app.add_plugins(avian2d::PhysicsPlugins::default().with_length_unit(1.))
-        // .add_plugins(avian2d::debug_render::PhysicsDebugPlugin::default())
+        .add_plugins(avian2d::debug_render::PhysicsDebugPlugin::default())
         .insert_resource(Gravity(Vector::ZERO))
         .add_systems(
             Update,
             (
                 dash.run_if(
-                    input_pressed(KeyCode::Space)
+                    input_just_pressed(KeyCode::Space)
                         .and(|editor_meta: Res<EditorMeta>| editor_meta.edit_mode)
                         .and(in_state(GameState::Running)),
                 ),
                 dash.run_if(
-                    input_pressed(MouseButton::Left)
+                    input_just_pressed(MouseButton::Left)
                         .and(|editor_meta: Res<EditorMeta>| !editor_meta.edit_mode)
                         .and(in_state(GameState::Running)),
                 ),
@@ -103,6 +103,9 @@ fn movement(
         if animation.eq(&PlayerAnimation::Dash) {
             continue;
         }
+        if animation.eq(&PlayerAnimation::DashSprint) {
+            continue;
+        }
         animation_config.flip_sprites = dir.x < 0.;
         let mut velocity = velocities.get_mut(parent.0).unwrap();
         velocity.0 = dir * player.speed * delta;
@@ -123,10 +126,15 @@ pub fn move_camera(
 
     let diff = player_transform.translation().xy() - cam_transform.translation.xy();
     if !MOVEMENT_RECT.contains(diff) {
-        cam_velocity.0 = diff * player.1.speed * delta;
+        const CAM_RIGIDNESS: f32 = 80.;
+        cam_velocity.0 = diff * player.1.speed * delta / CAM_RIGIDNESS;
         let outer_rect = MOVEMENT_RECT.inflate(1.3);
         if !outer_rect.contains(diff) {
-            cam_velocity.0 = diff * player.1.speed * delta * 2.;
+            cam_velocity.0 = diff * player.1.speed * delta / CAM_RIGIDNESS * 2.;
+        }
+        let outer_rect = MOVEMENT_RECT.inflate(1.6);
+        if !outer_rect.contains(diff) {
+            cam_velocity.0 = diff * player.1.speed * delta / CAM_RIGIDNESS * 4.;
         }
     } else {
         cam_velocity.0 = Vec2::ZERO;
@@ -179,22 +187,26 @@ pub fn enemy_movement(
     }
 }
 const MOVEMENT_RECT: Rect = Rect {
-    min: Vec2::new(-40., -50.),
-    max: Vec2::new(40., 50.),
+    min: Vec2::new(-30., -50.),
+    max: Vec2::new(30., 50.),
 };
 
 fn dash(
+    mut commands: Commands,
     mouse_position: Res<MousePosition>,
     players: Single<(&mut LinearVelocity, &GlobalTransform, &Children)>,
-    mut player_comp: Query<&mut PlayerAnimation, With<Player>>,
-    mut enemies: Query<(&GlobalTransform, &mut EnemyAnimation), (With<Enemy>, Without<Player>)>,
+    mut player_comp: Query<(Entity, &mut PlayerAnimation), With<Player>>,
+    mut enemies: Query<
+        (Entity, &GlobalTransform, &mut EnemyAnimation),
+        (With<Enemy>, Without<Player>),
+    >,
 ) {
     let enemy_pos = |trans: &GlobalTransform| trans.translation().xy() - Vec2::Y * 8.;
     let (mut velocity, transform, children) = players.into_inner();
     let Some(child) = children.first() else {
         return;
     };
-    let Ok(mut animation) = player_comp.get_mut(*child) else {
+    let Ok((entity, mut animation)) = player_comp.get_mut(*child) else {
         return;
     };
     if !animation.eq(&PlayerAnimation::Dash) {
@@ -202,13 +214,16 @@ fn dash(
         let player_pos = transform.translation().xy();
         let closest_enemy = enemies
             .iter_mut()
-            .filter(|(enemy, _)| enemy_pos(enemy).distance(player_pos) <= DASH_RADIUS)
-            .min_by(|(enemy, _), (enemy2, _)| {
+            .filter(|(_, enemy, animation)| {
+                enemy_pos(enemy).distance(player_pos) <= DASH_RADIUS
+                    && !animation.eq(&EnemyAnimation::Explode)
+            })
+            .min_by(|(_, enemy, _), (_, enemy2, _)| {
                 let d1 = enemy_pos(enemy).distance_squared(dash_point);
                 let d2 = enemy_pos(enemy2).distance_squared(dash_point);
                 d1.total_cmp(&d2)
             });
-        let Some((closest_transform, mut closest_animation)) = closest_enemy else {
+        let Some((enemy_e, closest_transform, mut closest_animation)) = closest_enemy else {
             return;
         };
         if enemy_pos(closest_transform).distance_squared(dash_point)
@@ -217,26 +232,45 @@ fn dash(
             return;
         }
         let distance = enemy_pos(closest_transform) - player_pos;
+        commands.entity(entity).insert(DashTargeting(enemy_e));
         *animation = PlayerAnimation::Dash;
-        *closest_animation = EnemyAnimation::Explode;
+        *closest_animation = EnemyAnimation::DashTargeted;
         velocity.0 = distance.normalize_or_zero() * DASH_IMPULSE;
     }
 }
 
 fn check_dash(
-    mut players: Query<&mut LinearVelocity>,
-    mut player_comp: Query<(&mut PlayerAnimation, &Player, &ChildOf)>,
+    mut commands: Commands,
+    mut players: Query<(Entity, &mut LinearVelocity)>,
+    mut player_comp: Query<(
+        Entity,
+        &mut PlayerAnimation,
+        &Player,
+        &ChildOf,
+        Option<&DashTargeting>,
+    )>,
+    transforms: Query<&Transform>,
+    mut enemy: Option<Single<&mut EnemyAnimation, With<DashTargetedBy>>>,
     time: Res<Time>,
 ) {
     let delta = time.delta_secs();
-    for (mut animation, player, parent) in &mut player_comp {
-        if !animation.eq(&PlayerAnimation::Dash) {
-            continue;
-        }
-        let mut velo = players.get_mut(parent.0).unwrap();
-        velo.0 *= DASH_DECLINE * (1. - delta).max(0.);
-        if velo.0.length_squared() < player.speed * player.speed {
-            *animation = PlayerAnimation::Running;
+    for (child_player_e, mut animation, player, parent, dash_target) in &mut player_comp {
+        if animation.eq(&PlayerAnimation::Dash) {
+            let (e, _velo) = players.get_mut(parent.0).unwrap();
+            let DashTargeting(target_e) = dash_target.unwrap();
+            let player_tr = transforms.get(e).unwrap();
+            let enemy_tr = transforms.get(*target_e).unwrap();
+            if player_tr.translation.distance(enemy_tr.translation) < 20. {
+                commands.entity(child_player_e).remove::<DashTargeting>();
+                *animation = PlayerAnimation::DashSprint;
+                *enemy.as_mut().unwrap().as_mut() = EnemyAnimation::Explode;
+            }
+        } else if animation.eq(&PlayerAnimation::DashSprint) {
+            let (_e, mut velo) = players.get_mut(parent.0).unwrap();
+            velo.0 *= DASH_DECLINE * (1. - delta).max(0.);
+            if velo.0.length_squared() < player.speed * player.speed * delta * delta {
+                *animation = PlayerAnimation::Running;
+            }
         }
     }
 }

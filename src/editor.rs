@@ -169,7 +169,7 @@ fn process_editor_events(
         &LayerType,
         Option<&SaveOverride>,
     )>,
-    override_tiles: Query<(&LayerType, &SaveOverride)>,
+    override_tiles: Query<(Entity, &LayerType, &SaveOverride, Option<&ChildOf>)>,
     mut tile_map: Query<(Entity, &mut TileStorage, &LayerType)>,
 ) {
     for event in events.read() {
@@ -187,6 +187,16 @@ fn process_editor_events(
                     if layer_type == *tile_layer_type && rect.contains(tile_pos.into()) {
                         count += 1;
                         commands.entity(e).despawn();
+                    }
+                }
+                for (e, tile_layer_type, override_tile, parent) in &override_tiles {
+                    if layer_type == *tile_layer_type && rect.contains(override_tile.0.pos.into()) {
+                        if let Some(parent) = parent {
+                            commands.entity(parent.0).despawn();
+                        } else {
+                            commands.entity(e).despawn();
+                        }
+                        count += 1;
                     }
                 }
                 if count > 0 {
@@ -239,7 +249,7 @@ fn process_editor_events(
                         index,
                     })
                 }
-                for (tile_layer_type, tile) in &override_tiles {
+                for (_e, tile_layer_type, tile, _) in &override_tiles {
                     let layer = level.layers.entry(*tile_layer_type).or_insert(io::Layer {
                         tiles: Vec::default(),
                     });
@@ -345,11 +355,15 @@ fn ui_tile_selection_update(
     textures: Res<map::Textures>,
     texture_atlas_layouts: Res<Assets<TextureAtlasLayout>>,
 ) {
+    let event = trigger.event();
+    if let UiRespawnTrigger::OverviewRespawn = event {
+        return;
+    }
     // cleanup in case of redrawing
     for e in &q {
         commands.entity(e).despawn();
     }
-    if let UiRespawnTrigger::TileSelectionRemove = trigger.event() {
+    if let UiRespawnTrigger::TileSelectionRemove = event {
         return;
     }
     commands

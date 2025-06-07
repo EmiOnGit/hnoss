@@ -43,6 +43,7 @@ fn apply_rule(
     tile_positions: Query<&TilePos>,
     textures: Res<map::Textures>,
     mut tile_map: Query<(Entity, &LayerType), With<TileStorage>>,
+    players: Query<(Entity, &ChildOf), With<Player>>,
 ) {
     let entity = trigger.target();
     let rule = trigger.event();
@@ -78,6 +79,9 @@ fn apply_rule(
         }
         OnSpawnTrigger::Collider => {}
         OnSpawnTrigger::Player => {
+            for (_player, parent) in &players {
+                commands.entity(parent.0).despawn();
+            }
             let tile_pos = tile_positions.get(entity).unwrap();
             let player_position = tile_to_world(tile_pos, entities_tilemap_translation);
             commands
@@ -101,6 +105,7 @@ fn apply_rule(
                 index: rule.target_index,
             };
             commands.entity(entity).insert((
+                Transform::from_translation(Vec3::Y * 10.),
                 RemoveOnLevelSwap,
                 sprite,
                 player_spawn(),
@@ -159,7 +164,7 @@ impl Player {
 }
 fn player_spawn() -> impl Bundle {
     (
-        Player::new(70.),
+        Player::new(3000.),
         CollisionLayers::new(CollisionLayer::Player, CollisionLayer::Block),
         animation::animation_bundle(PlayerAnimation::Idle),
     )

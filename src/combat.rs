@@ -8,14 +8,14 @@ use bevy::prelude::*;
 pub fn plugin(app: &mut App) {
     app.add_systems(
         Update,
-        (explode_slimes, check_tower).run_if(in_state(GameState::Running)),
+        (despawn_enemies, check_tower).run_if(in_state(GameState::Running)),
     );
 }
 
 #[derive(Component)]
 pub struct Tame;
 
-fn explode_slimes(
+fn despawn_enemies(
     mut commands: Commands,
     enemies: Query<(Entity, &Transform, &Sprite), With<Enemy>>,
     mut towers: Query<(&mut Tower, &mut Visibility, &Transform)>,
@@ -64,3 +64,11 @@ fn check_tower(
         println!("WON");
     }
 }
+
+#[derive(Component, Debug)]
+#[relationship_target(relationship = DashTargeting)]
+pub struct DashTargetedBy(Entity);
+
+#[derive(Component, Debug)]
+#[relationship(relationship_target = DashTargetedBy)]
+pub struct DashTargeting(pub Entity);

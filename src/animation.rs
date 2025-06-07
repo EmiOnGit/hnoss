@@ -36,6 +36,8 @@ pub enum PlayerAnimation {
     Idle,
     Running,
     Dash,
+    /// after dashing through an enemy
+    DashSprint,
 }
 impl Action for PlayerAnimation {
     fn as_animation(&self) -> AnimationConfig {
@@ -43,6 +45,7 @@ impl Action for PlayerAnimation {
             PlayerAnimation::Idle => AnimationConfig::new(0..4, 2),
             PlayerAnimation::Running => AnimationConfig::new(6..17, 8),
             PlayerAnimation::Dash => AnimationConfig::new(6..17, 16),
+            PlayerAnimation::DashSprint => AnimationConfig::new(6..17, 16),
         }
     }
 }
@@ -51,6 +54,7 @@ pub enum EnemyAnimation {
     Idle,
     Running,
     Explode,
+    DashTargeted,
 }
 impl Action for EnemyAnimation {
     fn as_animation(&self) -> AnimationConfig {
@@ -58,6 +62,7 @@ impl Action for EnemyAnimation {
             EnemyAnimation::Idle => AnimationConfig::new(0..2, 2),
             EnemyAnimation::Running => AnimationConfig::new(2..7, 8),
             EnemyAnimation::Explode => AnimationConfig::new(7..13, 5),
+            EnemyAnimation::DashTargeted => AnimationConfig::new(0..1, 5),
         }
     }
 }
