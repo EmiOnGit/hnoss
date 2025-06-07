@@ -187,8 +187,8 @@ pub fn enemy_movement(
     }
 }
 const MOVEMENT_RECT: Rect = Rect {
-    min: Vec2::new(-30., -50.),
-    max: Vec2::new(30., 50.),
+    min: Vec2::new(-30., -30.),
+    max: Vec2::new(30., 30.),
 };
 
 fn dash(
