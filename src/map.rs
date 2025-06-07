@@ -222,11 +222,11 @@ pub fn convert_to_tile_pos(position: Vec2) -> TilePos {
     let mut real_pos = position - TILEMAP_OFFSET;
     real_pos.x = real_pos.x.max(0.);
     real_pos.y = real_pos.y.max(0.);
-    let pos = TilePos::new(
+    
+    TilePos::new(
         real_pos.x as u32 / TILESIZE as u32,
         real_pos.y as u32 / TILESIZE as u32,
-    );
-    pos
+    )
 }
 /// Updates the world position of the cursor every frame for other systems to use
 fn update_mouse_position(

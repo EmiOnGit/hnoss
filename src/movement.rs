@@ -109,7 +109,7 @@ fn movement(
     }
 }
 pub fn move_camera(
-    mut cam: Single<(&mut LinearVelocity, &Transform), With<MainCamera>>,
+    cam: Single<(&mut LinearVelocity, &Transform), With<MainCamera>>,
     player: Option<Single<(&GlobalTransform, &Player)>>,
     time: Res<Time>,
 ) {

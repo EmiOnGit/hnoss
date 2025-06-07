@@ -11,7 +11,6 @@ mod utils;
 mod widget;
 use avian2d::prelude::RigidBody;
 use bevy::asset::AssetMetaCheck;
-use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin};
 use bevy::prelude::*;
 use screens::GameState;
 fn main() {
