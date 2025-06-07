@@ -8,19 +8,22 @@ license = "MIT OR Apache-2.0 OR CC0-1.0"
 
 avian2d = "0.3"
 bevy = {version = "0.16.0", features = ["wayland", "jpeg"]}
+bevy_ecs_tilemap = "0.16.0"
 rfd = "0.15.3"
 ron = "0.10.1"
 serde = { version = "1.0.219", features = ["derive"] }
 thiserror = "2.0.12"
 [features]
-default = ["dev_native"]
+# default = ["dev_native"]
+default = ["bevy/trace"]
 dev_native = [
   "bevy/file_watcher",
   "bevy/embedded_watcher",
   "bevy/dynamic_linking",
   "bevy/bevy_dev_tools",
   "bevy/track_location",
-]
+  "bevy/trace"
+  ]
 
 
 [package.metadata.bevy_cli.web]
@@ -57,12 +60,13 @@ opt-level = 1
 opt-level = 3
 
 [profile.release]
+debug=true
 # Compile the entire crate as one unit.
 # Slows compile times, marginal improvements.
-codegen-units = 1
+# codegen-units = 1
 # Do a second optimization pass over the entire program, including dependencies.
 # Slows compile times, marginal improvements.
-lto = "thin"
+# lto = "thin"
 
 # This profile will be used by `bevy run web` automatically.
 [profile.web-release]

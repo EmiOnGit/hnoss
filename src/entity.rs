@@ -61,7 +61,7 @@ fn apply_rule(
                 .entity(entity)
                 .insert((tower_spawn(), SaveOverride(tile)));
         }
-        OnSpawnTrigger::Collider => todo!(),
+        OnSpawnTrigger::Collider => {}
         OnSpawnTrigger::Player => {
             let mut transform = transf.get_mut(entity).unwrap();
             commands

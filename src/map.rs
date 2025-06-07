@@ -10,6 +10,7 @@ use crate::{
     movement::DASH_RADIUS,
 };
 use bevy::{prelude::*, window::PrimaryWindow};
+use bevy_ecs_tilemap::tiles::TileStorage;
 
 /// Tilesize of a single tile in the sheet in pixel.
 /// Width and Height are both the same
@@ -223,6 +224,7 @@ fn load_level(
     tiles_q: Query<(Entity, &Sprite, &Transform, &LayerType)>,
     removable: Query<Entity, With<RemoveOnLevelSwap>>,
     textures: Res<map::Textures>,
+    maps: Query<(Entity, &TileStorage)>,
 ) {
     for event in events.read() {
         match event {
