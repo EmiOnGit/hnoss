@@ -44,8 +44,8 @@ impl Action for PlayerAnimation {
         match self {
             PlayerAnimation::Idle => AnimationConfig::new(0..4, 2),
             PlayerAnimation::Running => AnimationConfig::new(6..17, 8),
-            PlayerAnimation::Dash => AnimationConfig::new(6..17, 16),
-            PlayerAnimation::DashSprint => AnimationConfig::new(6..17, 16),
+            PlayerAnimation::Dash => AnimationConfig::new(5..17, 16),
+            PlayerAnimation::DashSprint => AnimationConfig::new(18..24, 16),
         }
     }
 }

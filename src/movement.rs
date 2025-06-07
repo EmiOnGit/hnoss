@@ -1,11 +1,11 @@
-use std::f32::consts::PI;
+use std::{f32::consts::PI, time::Duration};
 
 use avian2d::{
     math::Vector,
     prelude::{Gravity, LinearVelocity, PhysicsLayer},
 };
 use bevy::{
-    color::palettes::tailwind::{RED_400, YELLOW_400},
+    color::palettes::tailwind::{PURPLE_400, RED_400, YELLOW_400},
     input::common_conditions::input_just_pressed,
     prelude::*,
 };
@@ -15,14 +15,16 @@ use crate::{
     animation::{AnimationConfig, EnemyAnimation, PlayerAnimation},
     combat::{DashTargetedBy, DashTargeting, Tame},
     editor::EditorMeta,
-    entity::{Enemy, Player},
-    map::MousePosition,
+    entity::{Enemy, Player, PlayerMode},
+    map::{MousePosition, Textures},
     screens::GameState,
 };
 pub const DASH_RADIUS: f32 = 70.;
 pub const DASH_RECOGNITION_RADIUS: f32 = 50.;
-pub const DASH_IMPULSE: f32 = 500.;
+pub const DASH_IMPULSE: f32 = 350.;
 pub const DASH_DECLINE: f32 = 0.90;
+pub const TIRED_TIME: Duration = Duration::from_secs(3);
+pub const ACTIVE_TIME: Duration = Duration::from_secs(2);
 pub fn plugin(app: &mut App) {
     app.add_plugins(avian2d::PhysicsPlugins::default().with_length_unit(1.))
         // .add_plugins(avian2d::debug_render::PhysicsDebugPlugin::default())
@@ -195,7 +197,7 @@ fn dash(
     mut commands: Commands,
     mouse_position: Res<MousePosition>,
     players: Single<(&mut LinearVelocity, &GlobalTransform, &Children)>,
-    mut player_comp: Query<(Entity, &mut PlayerAnimation), With<Player>>,
+    mut player_comp: Query<(Entity, &mut PlayerAnimation, &Player)>,
     mut enemies: Query<
         (Entity, &GlobalTransform, &mut EnemyAnimation),
         (With<Enemy>, Without<Player>),
@@ -206,10 +208,10 @@ fn dash(
     let Some(child) = children.first() else {
         return;
     };
-    let Ok((entity, mut animation)) = player_comp.get_mut(*child) else {
+    let Ok((entity, mut animation, player)) = player_comp.get_mut(*child) else {
         return;
     };
-    if !animation.eq(&PlayerAnimation::Dash) {
+    if !animation.eq(&PlayerAnimation::Dash) && !matches!(player.mode, PlayerMode::Tired(_)) {
         let dash_point = mouse_position.dash_point;
         let player_pos = transform.translation().xy();
         let closest_enemy = enemies
@@ -245,22 +247,28 @@ fn check_dash(
     mut player_comp: Query<(
         Entity,
         &mut PlayerAnimation,
-        &Player,
+        &mut Sprite,
+        &mut Player,
         &ChildOf,
         Option<&DashTargeting>,
     )>,
+    textures: Res<Textures>,
     transforms: Query<&Transform>,
     mut enemy: Option<Single<&mut EnemyAnimation, With<DashTargetedBy>>>,
     time: Res<Time>,
 ) {
     let delta = time.delta_secs();
-    for (child_player_e, mut animation, player, parent, dash_target) in &mut player_comp {
+    for (child_player_e, mut animation, mut sprite, mut player, parent, dash_target) in
+        &mut player_comp
+    {
         if animation.eq(&PlayerAnimation::Dash) {
             let (e, _velo) = players.get_mut(parent.0).unwrap();
             let DashTargeting(target_e) = dash_target.unwrap();
             let player_tr = transforms.get(e).unwrap();
             let enemy_tr = transforms.get(*target_e).unwrap();
             if player_tr.translation.distance(enemy_tr.translation) < 20. {
+                sprite.image = textures.player_active.texture.clone();
+                player.mode = PlayerMode::Active(Timer::new(ACTIVE_TIME, TimerMode::Once));
                 commands.entity(child_player_e).remove::<DashTargeting>();
                 *animation = PlayerAnimation::DashSprint;
                 *enemy.as_mut().unwrap().as_mut() = EnemyAnimation::Explode;
@@ -277,15 +285,21 @@ fn check_dash(
 fn dash_ui(
     mut my_gizmos: Gizmos<DefaultGizmoConfigGroup>,
     mouse_position: Res<MousePosition>,
-    player: Single<(&GlobalTransform, &PlayerAnimation), With<Player>>,
+    player: Single<(&Player, &GlobalTransform, &PlayerAnimation)>,
 ) {
-    let (transform, animation) = player.into_inner();
+    let (player, transform, animation) = player.into_inner();
     let player_pos = transform.translation().xy();
     let dash_point = mouse_position.dash_point;
     let delta = player_pos - dash_point;
     let color = match animation {
         PlayerAnimation::Dash => RED_400,
-        _ => YELLOW_400,
+        _ => match &player.mode {
+            PlayerMode::Active(_timer) => PURPLE_400,
+            PlayerMode::Normal => YELLOW_400,
+            PlayerMode::Tired(timer) => {
+                YELLOW_400.with_alpha(timer.elapsed_secs() / TIRED_TIME.as_secs_f32() / 2.)
+            }
+        },
     };
     my_gizmos.arc_2d(
         Isometry2d::new(player_pos, Rot2::radians(delta.to_angle() + PI / 2. - 0.1)),

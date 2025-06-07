@@ -1,20 +1,47 @@
 use crate::{
     editor::EditorMeta,
-    entity::{Enemy, Tower},
+    entity::{Enemy, Player, PlayerMode, Tower},
     io::SaveFile,
+    map::Textures,
+    movement::TIRED_TIME,
     screens::GameState,
 };
 use bevy::prelude::*;
 pub fn plugin(app: &mut App) {
     app.add_systems(
         Update,
-        (despawn_enemies, check_tower).run_if(in_state(GameState::Running)),
+        (despawn_enemies, check_tower, update_player_mode).run_if(in_state(GameState::Running)),
     );
 }
 
 #[derive(Component)]
 pub struct Tame;
 
+fn update_player_mode(
+    mut players: Query<(&mut Player, &mut Sprite)>,
+    time: Res<Time>,
+    textures: Res<Textures>,
+) {
+    let delta = time.delta();
+    for (mut player, mut sprite) in &mut players {
+        match &mut player.mode {
+            PlayerMode::Active(timer) => {
+                timer.tick(delta);
+                if timer.finished() {
+                    sprite.image = textures.player.texture.clone();
+                    player.mode = PlayerMode::Tired(Timer::new(TIRED_TIME, TimerMode::Once))
+                }
+            }
+            PlayerMode::Normal => {}
+            PlayerMode::Tired(timer) => {
+                timer.tick(delta);
+                if timer.finished() {
+                    player.mode = PlayerMode::Normal
+                }
+            }
+        }
+    }
+}
 fn despawn_enemies(
     mut commands: Commands,
     enemies: Query<(Entity, &Transform, &Sprite), With<Enemy>>,

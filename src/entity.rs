@@ -156,10 +156,19 @@ fn tower_spawn() -> impl Bundle {
 #[derive(Component)]
 pub struct Player {
     pub speed: f32,
+    pub mode: PlayerMode,
+}
+pub enum PlayerMode {
+    Active(Timer),
+    Normal,
+    Tired(Timer),
 }
 impl Player {
     pub fn new(speed: f32) -> Player {
-        Player { speed }
+        Player {
+            speed,
+            mode: PlayerMode::Normal,
+        }
     }
 }
 fn player_spawn() -> impl Bundle {

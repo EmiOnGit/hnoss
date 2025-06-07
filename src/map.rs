@@ -32,6 +32,7 @@ pub const MAIN_TEXTURE_PATH: &str = "textures.png";
 pub const ENTITY_TEXTURE_PATH: &str = "entities.png";
 pub const FIRE_TEXTURE_PATH: &str = "fire.png";
 pub const PLAYER_TEXTURE_PATH: &str = "char.png";
+pub const PLAYER_ACTIVE_TEXTURE_PATH: &str = "char_active.png";
 pub const ENEMIES_TEXTURE_PATH: &str = "enemies.png";
 const MAIN_MENU_IMAGE: &str = "goblin_splash.jpg";
 pub const TILEMAP_OFFSET: Vec2 = Vec2::new(-100., -100.);
@@ -139,6 +140,7 @@ pub struct TexturePack {
 pub struct Textures {
     pub pack: HashMap<LayerType, TexturePack>,
     pub player: TexturePack,
+    pub player_active: TexturePack,
     pub enemy: TexturePack,
     pub fire: TexturePack,
     pub main_menu_image: Handle<Image>,
@@ -152,7 +154,7 @@ impl FromWorld for Textures {
             TextureAtlasLayout::from_grid(UVec2::splat(TILESIZE as u32), 8, 4, None, None);
         let fire_layout =
             TextureAtlasLayout::from_grid(UVec2::splat(TILESIZE as u32), 8, 4, None, None);
-        let player_layout = TextureAtlasLayout::from_grid(PLAYERSIZE, 6, 3, None, None);
+        let player_layout = TextureAtlasLayout::from_grid(PLAYERSIZE, 6, 4, None, None);
         let enemy_layout = TextureAtlasLayout::from_grid(ENEMYSIZE, 6, 3, None, None);
         let main_layout = texture_atlas_layouts.add(main_layout);
         let entity_layout = texture_atlas_layouts.add(entity_layout);
@@ -193,6 +195,11 @@ impl FromWorld for Textures {
         }
         let player = TexturePack {
             texture: asset_server.load(PLAYER_TEXTURE_PATH),
+            layout: player_layout.clone(),
+            rules: Vec::default(),
+        };
+        let player_active = TexturePack {
+            texture: asset_server.load(PLAYER_ACTIVE_TEXTURE_PATH),
             layout: player_layout,
             rules: Vec::default(),
         };
@@ -219,6 +226,7 @@ impl FromWorld for Textures {
             enemy,
             fire,
             main_menu_image,
+            player_active,
         }
     }
 }
