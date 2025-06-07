@@ -3,11 +3,13 @@ use crate::{
     combat::Tame,
     editor::{RemoveOnLevelSwap, SaveOverride},
     io,
-    map::{self, ENEMYSIZE, convert_to_tile_grid},
+    map::{self, ENEMYSIZE, LayerType},
     movement::CollisionLayer,
+    utils::tile_to_world,
 };
 use avian2d::prelude::{self as avian, CollisionLayers};
 use bevy::prelude::*;
+use bevy_ecs_tilemap::tiles::{TilePos, TileStorage};
 
 pub fn plugin(app: &mut App) {
     app.add_observer(apply_rule);
@@ -22,12 +24,14 @@ pub enum OnSpawnTrigger {
 #[derive(Reflect, Event, Debug, Clone, Copy)]
 pub struct Rule {
     pub target_index: usize,
+    pub spawn_in_tilemap: bool,
     pub on_spawn: OnSpawnTrigger,
 }
 impl Rule {
-    pub fn new(target_index: usize, on_spawn: OnSpawnTrigger) -> Rule {
+    pub fn new(target_index: usize, on_spawn: OnSpawnTrigger, spawn_in_tilemap: bool) -> Rule {
         Rule {
             target_index,
+            spawn_in_tilemap,
             on_spawn,
         }
     }
@@ -35,76 +39,95 @@ impl Rule {
 fn apply_rule(
     trigger: Trigger<Rule>,
     mut commands: Commands,
-    mut transf: Query<&mut Transform>,
-    mut sprites: Query<&mut Sprite>,
+    transf: Query<&mut Transform>,
+    tile_positions: Query<&TilePos>,
     textures: Res<map::Textures>,
+    mut tile_map: Query<(Entity, &LayerType), With<TileStorage>>,
 ) {
     let entity = trigger.target();
     let rule = trigger.event();
     let trigger = rule.on_spawn;
+    let (entities_tilemap_e, _) = tile_map
+        .iter_mut()
+        .find(|(_, layer_type)| **layer_type == LayerType::Entities)
+        .unwrap();
+    let entities_tilemap_translation = transf.get(entities_tilemap_e).unwrap().translation;
     match trigger {
         OnSpawnTrigger::Tower => {
-            let mut transform = transf.get_mut(entity).unwrap();
-            transform.translation.y += 4.;
-            let mut sprite = sprites.get_mut(entity).unwrap();
-            sprite.image = textures.fire.texture.clone();
-            sprite.texture_atlas = Some(TextureAtlas {
-                layout: textures.fire.layout.clone(),
-                index: 0,
-            });
-            let position = convert_to_tile_grid(transform.translation.xy());
+            let tile_pos = tile_positions.get(entity).unwrap();
+            let mut tower_position = tile_to_world(tile_pos, entities_tilemap_translation);
+            tower_position.y += 4.;
+            let sprite = Sprite::from_atlas_image(
+                textures.fire.texture.clone(),
+                TextureAtlas {
+                    layout: textures.fire.layout.clone(),
+                    index: 0,
+                },
+            );
             let tile = io::Tile {
-                pos: position,
+                pos: tile_pos.into(),
                 index: rule.target_index,
             };
-            commands
-                .entity(entity)
-                .insert((tower_spawn(), SaveOverride(tile)));
+            commands.entity(entity).insert((
+                RemoveOnLevelSwap,
+                sprite,
+                tower_spawn(),
+                Transform::from_translation(tower_position),
+                SaveOverride(tile),
+            ));
         }
         OnSpawnTrigger::Collider => {}
         OnSpawnTrigger::Player => {
-            let mut transform = transf.get_mut(entity).unwrap();
+            let tile_pos = tile_positions.get(entity).unwrap();
+            let player_position = tile_to_world(tile_pos, entities_tilemap_translation);
             commands
                 .spawn((
                     RemoveOnLevelSwap,
                     avian::RigidBody::Kinematic,
                     avian::Collider::rectangle(5.0, 5.0),
-                    *transform,
+                    Transform::from_translation(player_position),
                 ))
                 .add_child(entity);
-            *transform = Transform::from_translation(Vec3::new(0., 10., 0.));
             info!("spawn player");
-            let mut sprite = sprites.get_mut(entity).unwrap();
-            sprite.image = textures.player.texture.clone();
-            sprite.texture_atlas = Some(TextureAtlas {
-                layout: textures.player.layout.clone(),
-                index: 0,
-            });
-            let position = convert_to_tile_grid(transform.translation.xy());
+            let sprite = Sprite::from_atlas_image(
+                textures.player.texture.clone(),
+                TextureAtlas {
+                    layout: textures.player.layout.clone(),
+                    index: 0,
+                },
+            );
             let tile = io::Tile {
-                pos: position,
+                pos: tile_pos.into(),
                 index: rule.target_index,
             };
-            commands
-                .entity(entity)
-                .insert((player_spawn(), SaveOverride(tile)));
+            commands.entity(entity).insert((
+                RemoveOnLevelSwap,
+                sprite,
+                player_spawn(),
+                SaveOverride(tile),
+            ));
         }
         OnSpawnTrigger::Enemy => {
-            let transform = transf.get(entity).unwrap();
-            let mut sprite = sprites.get_mut(entity).unwrap();
-            sprite.image = textures.enemy.texture.clone();
-            sprite.texture_atlas = Some(TextureAtlas {
-                layout: textures.enemy.layout.clone(),
-                index: 0,
-            });
-            let position = convert_to_tile_grid(transform.translation.xy());
+            let tile_pos = tile_positions.get(entity).unwrap();
+            let enemy_position = tile_to_world(tile_pos, entities_tilemap_translation);
+            let sprite = Sprite::from_atlas_image(
+                textures.enemy.texture.clone(),
+                TextureAtlas {
+                    layout: textures.enemy.layout.clone(),
+                    index: 0,
+                },
+            );
             let tile = io::Tile {
-                pos: position,
+                pos: tile_pos.into(),
                 index: rule.target_index,
             };
-            commands
-                .entity(entity)
-                .insert((enemy_spawn(), SaveOverride(tile)));
+            commands.entity(entity).insert((
+                RemoveOnLevelSwap,
+                Transform::from_translation(enemy_position),
+                sprite,
+                enemy_spawn(),
+                SaveOverride(tile),
+            ));
         }
     };
     warn!("apply {trigger:?} entity {entity:?}");

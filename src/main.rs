@@ -11,6 +11,7 @@ mod utils;
 mod widget;
 use avian2d::prelude::RigidBody;
 use bevy::asset::AssetMetaCheck;
+use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin};
 use bevy::prelude::*;
 use screens::GameState;
 fn main() {
@@ -49,7 +50,7 @@ fn init_camera(mut commands: Commands) {
     commands.spawn((
         Camera2d,
         Camera {
-            hdr: true,
+            // hdr: true,
             ..default()
         },
         Projection::Orthographic(projection),

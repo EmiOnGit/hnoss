@@ -1,4 +1,4 @@
-use std::{f32::consts::PI, fmt};
+use std::f32::consts::PI;
 
 use avian2d::{
     math::Vector,
@@ -14,6 +14,7 @@ use crate::{
     MainCamera,
     animation::{AnimationConfig, EnemyAnimation, PlayerAnimation},
     combat::Tame,
+    editor::EditorMeta,
     entity::{Enemy, Player},
     map::MousePosition,
     screens::GameState,
@@ -26,10 +27,20 @@ pub fn plugin(app: &mut App) {
     app.add_plugins(avian2d::PhysicsPlugins::default().with_length_unit(1.))
         // .add_plugins(avian2d::debug_render::PhysicsDebugPlugin::default())
         .insert_resource(Gravity(Vector::ZERO))
-        .init_resource::<CameraController>()
         .add_systems(
             Update,
-            dash.run_if(input_pressed(KeyCode::Space).and(in_state(GameState::Running))),
+            (
+                dash.run_if(
+                    input_pressed(KeyCode::Space)
+                        .and(|editor_meta: Res<EditorMeta>| editor_meta.edit_mode)
+                        .and(in_state(GameState::Running)),
+                ),
+                dash.run_if(
+                    input_pressed(MouseButton::Left)
+                        .and(|editor_meta: Res<EditorMeta>| !editor_meta.edit_mode)
+                        .and(in_state(GameState::Running)),
+                ),
+            ),
         )
         .add_systems(
             Update,
@@ -46,9 +57,8 @@ pub enum CollisionLayer {
     Player,
 }
 fn movement(
-    controller: Res<CameraController>,
     keys: Res<ButtonInput<KeyCode>>,
-    cam_entity: Single<Entity, With<MainCamera>>,
+    time: Res<Time>,
     mut velocities: Query<&mut LinearVelocity>,
     mut players: Query<
         (
@@ -85,36 +95,25 @@ fn movement(
         return;
     }
 
-    match *controller {
-        CameraController::Camera => {
-            let mut velocity = velocities.get_mut(*cam_entity).unwrap();
-            velocity.0 += dir;
+    let delta = time.delta_secs();
+    for (mut animation_config, mut animation, player, parent) in &mut players {
+        if animation.eq(&PlayerAnimation::Idle) {
+            *animation = PlayerAnimation::Running;
         }
-        CameraController::Player => {
-            for (mut animation_config, mut animation, player, parent) in &mut players {
-                if animation.eq(&PlayerAnimation::Idle) {
-                    *animation = PlayerAnimation::Running;
-                }
-                if animation.eq(&PlayerAnimation::Dash) {
-                    continue;
-                }
-                animation_config.flip_sprites = dir.x < 0.;
-                let mut velocity = velocities.get_mut(parent.0).unwrap();
-                velocity.0 = dir * player.speed;
-            }
+        if animation.eq(&PlayerAnimation::Dash) {
+            continue;
         }
+        animation_config.flip_sprites = dir.x < 0.;
+        let mut velocity = velocities.get_mut(parent.0).unwrap();
+        velocity.0 = dir * player.speed * delta;
     }
 }
 pub fn move_camera(
-    controller: Res<CameraController>,
-    mut cam: Query<(&mut LinearVelocity, &Transform), With<MainCamera>>,
+    mut cam: Single<(&mut LinearVelocity, &Transform), With<MainCamera>>,
     player: Option<Single<(&GlobalTransform, &Player)>>,
     time: Res<Time>,
 ) {
-    if *controller != CameraController::Player {
-        return;
-    }
-    let (mut cam_velocity, cam_transform) = cam.single_mut().unwrap();
+    let (mut cam_velocity, cam_transform) = cam.into_inner();
     let Some(player) = player else {
         cam_velocity.0 = Vec2::ZERO;
         return;
@@ -183,28 +182,6 @@ const MOVEMENT_RECT: Rect = Rect {
     min: Vec2::new(-40., -50.),
     max: Vec2::new(40., 50.),
 };
-#[derive(Default, PartialEq, Debug, Resource)]
-pub enum CameraController {
-    Camera,
-    #[default]
-    Player,
-}
-impl CameraController {
-    pub fn toggle(&mut self) {
-        match self {
-            CameraController::Camera => *self = CameraController::Player,
-            CameraController::Player => *self = CameraController::Camera,
-        }
-    }
-}
-impl fmt::Display for CameraController {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            CameraController::Camera => "Camera Controller",
-            CameraController::Player => "Player Controller",
-        })
-    }
-}
 
 fn dash(
     mouse_position: Res<MousePosition>,
@@ -249,13 +226,15 @@ fn dash(
 fn check_dash(
     mut players: Query<&mut LinearVelocity>,
     mut player_comp: Query<(&mut PlayerAnimation, &Player, &ChildOf)>,
+    time: Res<Time>,
 ) {
+    let delta = time.delta_secs();
     for (mut animation, player, parent) in &mut player_comp {
         if !animation.eq(&PlayerAnimation::Dash) {
             continue;
         }
         let mut velo = players.get_mut(parent.0).unwrap();
-        velo.0 *= DASH_DECLINE;
+        velo.0 *= DASH_DECLINE * (1. - delta).max(0.);
         if velo.0.length_squared() < player.speed * player.speed {
             *animation = PlayerAnimation::Running;
         }

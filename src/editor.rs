@@ -4,14 +4,17 @@ use bevy::{
     picking::hover::HoverMap,
     prelude::*,
 };
+use bevy_ecs_tilemap::{
+    map::TilemapId,
+    tiles::{TileBundle, TilePos, TileStorage, TileTextureIndex},
+};
 
 use crate::{
     GameState,
     entity::Player,
-    io::{self, SaveFile},
-    map::{self, LayerType, MousePosition, TILESIZE, Textures, convert_to_tile_grid},
-    movement::CameraController,
-    utils::iter_grid_rect,
+    io::{self, SaveFile, Tile},
+    map::{self, LayerType, MousePosition, TILEMAP_OFFSET, TILESIZE, convert_to_tile_pos},
+    utils::{self, iter_grid_rect},
     widget,
 };
 pub const NORMAL_BUTTON: Color = Color::srgb(0.15, 0.15, 0.15);
@@ -21,20 +24,15 @@ pub fn plugin(app: &mut App) {
     app.add_event::<EditorEvents>()
         .init_resource::<EditorMeta>()
         .add_event::<UiRespawnTrigger>()
-        .add_observer(init_ui_tile_selection)
-        .add_systems(
-            OnEnter(GameState::Running),
-            (
-                init_ui,
-                // init_ui_tile_selection,
-                init_ui_overview,
-            ),
-        )
+        .add_observer(ui_tile_selection_update)
+        .add_observer(init_ui_overview)
+        .add_systems(OnEnter(GameState::Running), |mut commands: Commands| {
+            commands.trigger(UiRespawnTrigger::OverviewRespawn)
+        })
         .add_systems(
             Update,
             (
                 debug_player,
-                check_input,
                 process_editor_events,
                 tile_button_system,
                 overview_button_system,
@@ -45,11 +43,9 @@ pub fn plugin(app: &mut App) {
         )
         .add_systems(
             Update,
-            (current_tile_ui, draw_selection_indicator).run_if(in_state(GameState::Running)),
+            (current_tile_ui, draw_selection_indicator, check_input)
+                .run_if(in_state(GameState::Running).and(|meta: Res<EditorMeta>| meta.edit_mode)),
         );
-}
-fn init_ui(mut commands: Commands) {
-    commands.trigger(UiRespawnTrigger::TileSelection);
 }
 #[derive(Resource, Default)]
 pub struct EditorMeta {
@@ -59,6 +55,7 @@ pub struct EditorMeta {
     current_selection_start: Option<Vec2>,
     layer_type: LayerType,
     pub current_level: Handle<SaveFile>,
+    pub edit_mode: bool,
 }
 fn check_input(
     mouse: Res<ButtonInput<MouseButton>>,
@@ -101,7 +98,9 @@ fn draw_selection_indicator(
     let Some(start_pos) = editor_meta.current_selection_start else {
         return;
     };
-    let cur_pos = mouse_position.to_tile_grid_lb().as_vec2();
+    let cur_pos = utils::world_to_tilepos(mouse_position.world_position, TILEMAP_OFFSET)
+        .map(|tilepos| utils::tile_to_world(&tilepos, TILEMAP_OFFSET.extend(0.)).xy())
+        .unwrap_or(start_pos);
     let center = (cur_pos + start_pos) / 2.;
     let size = cur_pos - start_pos;
     my_gizmos.rect_2d(
@@ -114,12 +113,14 @@ fn current_tile_ui(
     mut my_gizmos: Gizmos<DefaultGizmoConfigGroup>,
     mouse_position: Res<MousePosition>,
 ) {
-    let position = mouse_position.to_tile_grid_lb();
-    my_gizmos.rect_2d(
-        Isometry2d::new(position.as_vec2(), Rot2::IDENTITY),
-        Vec2::new(TILESIZE as f32, TILESIZE as f32),
-        palettes::basic::FUCHSIA,
-    );
+    let position = mouse_position.to_tilepos_vec2();
+    if let Some(position) = position {
+        my_gizmos.rect_2d(
+            Isometry2d::new(position, Rot2::IDENTITY),
+            Vec2::new(TILESIZE as f32, TILESIZE as f32),
+            palettes::basic::FUCHSIA,
+        );
+    }
 }
 #[derive(Event)]
 pub enum EditorEvents {
@@ -130,24 +131,21 @@ pub enum EditorEvents {
     LoadLevel {
         name: Option<String>,
     },
+    ToggleEditMode,
 }
-pub fn spawn_tile(
-    tile_grid_position: IVec2,
-    textures: &Textures,
+pub fn spawn_tiled(
+    tilemap_entity: Entity,
+    position: TilePos,
     index: usize,
     layer_type: LayerType,
 ) -> impl Bundle {
-    let sprite = Sprite::from_atlas_image(
-        textures.pack[&layer_type].texture.clone(),
-        TextureAtlas {
-            layout: textures.pack[&layer_type].layout.clone(),
-            index,
-        },
-    );
-    let position = tile_grid_position.as_vec2().extend(layer_type.z());
     (
-        sprite.clone(),
-        Transform::from_translation(position),
+        TileBundle {
+            position,
+            tilemap_id: TilemapId(tilemap_entity),
+            texture_index: TileTextureIndex(index as u32),
+            ..default()
+        },
         layer_type,
     )
 }
@@ -165,30 +163,27 @@ fn process_editor_events(
     textures: Res<map::Textures>,
     tiles_q: Query<(
         Entity,
-        &Sprite,
-        &Transform,
+        &TileTextureIndex,
+        &TilePos,
         &LayerType,
         Option<&SaveOverride>,
     )>,
+    override_tiles: Query<(&LayerType, &SaveOverride)>,
+    mut tile_map: Query<(Entity, &mut TileStorage, &LayerType)>,
 ) {
     for event in events.read() {
         match event {
             EditorEvents::SpawnTiles(start, end) => {
-                let start_pos = convert_to_tile_grid(*start);
-                let end_pos = convert_to_tile_grid(*end);
+                let start_pos = convert_to_tile_pos(*start);
+                let end_pos = convert_to_tile_pos(*end);
                 let v = iter_grid_rect(start_pos, end_pos);
                 info!("spawning {} tiles", v.len());
                 let layer_type = editor_meta.layer_type;
                 // despawn all tiles that already exist in that layer
                 let mut count = 0;
-                let rect = Rect::new(
-                    start_pos.x as f32,
-                    start_pos.y as f32,
-                    end_pos.x as f32,
-                    end_pos.y as f32,
-                );
-                for (e, _, trans, tile_layer_type, _) in &tiles_q {
-                    if layer_type == *tile_layer_type && rect.contains(trans.translation.xy()) {
+                let rect = URect::new(start_pos.x, start_pos.y, end_pos.x, end_pos.y);
+                for (e, _, tile_pos, tile_layer_type, _) in &tiles_q {
+                    if layer_type == *tile_layer_type && rect.contains(tile_pos.into()) {
                         count += 1;
                         commands.entity(e).despawn();
                     }
@@ -196,31 +191,40 @@ fn process_editor_events(
                 if count > 0 {
                     info!("despawned {} tiles", count);
                 }
+                let (tilemap_e, mut storage, _) = tile_map
+                    .iter_mut()
+                    .find(|(_e, _storage, layer_type)| **layer_type == editor_meta.layer_type)
+                    .unwrap();
                 // spawn new tiles
                 let rules = &textures.pack[&editor_meta.layer_type].rules;
                 if let Some(selected_tile) = &editor_meta.selected_tile {
-                    let rule = rules
+                    let rule_index = rules
                         .iter()
-                        .find(|rule| rule.target_index == selected_tile.index);
-                    for position in v {
-                        let e = commands
-                            .spawn(spawn_tile(
-                                position,
-                                &textures,
-                                selected_tile.index,
-                                editor_meta.layer_type,
-                            ))
-                            .id();
-                        if let Some(rule) = rule {
-                            commands.trigger_targets(*rule, e);
-                        }
+                        .position(|rule| rule.target_index == selected_tile.index)
+                        .unwrap_or_default();
+                    for tile_pos in v {
+                        map::spawn_tile(
+                            &[rules[rule_index]],
+                            &mut commands,
+                            &Tile {
+                                pos: tile_pos.into(),
+                                index: selected_tile.index,
+                            },
+                            tilemap_e,
+                            &mut storage,
+                            layer_type,
+                        );
                     }
                 }
             }
             EditorEvents::SaveLevel => {
                 info!("Saving level");
                 let mut level = io::SaveFile::default();
-                for (_e, sprite, trans, tile_layer_type, save_override) in &tiles_q {
+                for (_e, texture_index, tile_pos, tile_layer_type, save_override) in &tiles_q {
+                    // will processed later
+                    if save_override.is_some() {
+                        continue;
+                    }
                     let layer = level.layers.entry(*tile_layer_type).or_insert(io::Layer {
                         tiles: Vec::default(),
                     });
@@ -228,14 +232,17 @@ fn process_editor_events(
                         layer.tiles.push(tile.0);
                         continue;
                     }
-                    let position = convert_to_tile_grid(trans.translation.xy());
-                    let Some(texture_atlas) = &sprite.texture_atlas else {
-                        continue;
-                    };
+                    let index = texture_index.0 as usize;
                     layer.tiles.push(io::Tile {
-                        pos: position,
-                        index: texture_atlas.index,
+                        pos: tile_pos.into(),
+                        index,
                     })
+                }
+                for (tile_layer_type, tile) in &override_tiles {
+                    let layer = level.layers.entry(*tile_layer_type).or_insert(io::Layer {
+                        tiles: Vec::default(),
+                    });
+                    layer.tiles.push(tile.0);
                 }
                 io::save(&level);
             }
@@ -256,42 +263,80 @@ fn process_editor_events(
                     info!("loading failed");
                 }
             }
+            EditorEvents::ToggleEditMode => {
+                commands.trigger(UiRespawnTrigger::OverviewRespawn);
+                editor_meta.edit_mode = !editor_meta.edit_mode;
+                if editor_meta.edit_mode {
+                    commands.trigger(UiRespawnTrigger::TileSelectionRespawn);
+                } else {
+                    commands.trigger(UiRespawnTrigger::TileSelectionRemove);
+                }
+            }
         }
     }
 }
+#[derive(Component)]
+struct OverviewUiRoot;
 fn init_ui_overview(
+    trigger: Trigger<UiRespawnTrigger>,
+    q: Query<Entity, With<OverviewUiRoot>>,
     mut commands: Commands,
     editor_meta: Res<EditorMeta>,
-    camera_controller: Res<CameraController>,
 ) {
-    commands.spawn((
-        Node {
-            left: Val::Percent(20.),
-            width: Val::Percent(60.),
-            height: Val::Percent(4.),
-            align_items: AlignItems::Center,
-            ..default()
-        },
-        BackgroundColor(BLUE_500.into()),
-        children![
-            widget::overview_button(OverviewButton::LayerType, editor_meta.layer_type.name()),
-            widget::overview_button(OverviewButton::Save, "Save"),
-            widget::overview_button(OverviewButton::Load, "Load"),
-            widget::overview_button(
-                OverviewButton::ToggleCameraController,
-                camera_controller.to_string()
-            ),
-        ],
-    ));
+    // cleanup in case of redrawing
+    let UiRespawnTrigger::OverviewRespawn = trigger.event() else {
+        return;
+    };
+    for e in &q {
+        commands.entity(e).despawn();
+    }
+    let node = commands
+        .spawn((
+            Node {
+                left: Val::Percent(20.),
+                width: Val::Percent(60.),
+                height: Val::Percent(4.),
+                align_items: AlignItems::Center,
+                ..default()
+            },
+            BackgroundColor(BLUE_500.into()),
+            OverviewUiRoot,
+            children![
+                widget::overview_button(
+                    OverviewButton::EditMode,
+                    if editor_meta.edit_mode {
+                        "Edit mode"
+                    } else {
+                        "Play mode"
+                    }
+                ),
+                widget::overview_button(OverviewButton::Load, "Load"),
+            ],
+        ))
+        .id();
+    if cfg!(not(target_arch = "wasm32")) {
+        commands
+            .entity(node)
+            .with_child(widget::overview_button(OverviewButton::Save, "Save"));
+    }
+    if editor_meta.edit_mode {
+        println!("add layer type");
+        commands.entity(node).with_child(widget::overview_button(
+            OverviewButton::LayerType,
+            editor_meta.layer_type.name(),
+        ));
+    }
 }
 
 #[derive(Event)]
 enum UiRespawnTrigger {
-    TileSelection,
+    TileSelectionRespawn,
+    TileSelectionRemove,
+    OverviewRespawn,
 }
 #[derive(Component)]
 struct TileSelectionUiRoot;
-fn init_ui_tile_selection(
+fn ui_tile_selection_update(
     trigger: Trigger<UiRespawnTrigger>,
     editor_meta: Res<EditorMeta>,
     mut commands: Commands,
@@ -299,10 +344,12 @@ fn init_ui_tile_selection(
     textures: Res<map::Textures>,
     texture_atlas_layouts: Res<Assets<TextureAtlasLayout>>,
 ) {
-    trigger.event();
     // cleanup in case of redrawing
     for e in &q {
         commands.entity(e).despawn();
+    }
+    if let UiRespawnTrigger::TileSelectionRemove = trigger.event() {
+        return;
     }
     commands
         .spawn((
@@ -359,10 +406,10 @@ fn init_ui_tile_selection(
 pub struct TileButton;
 #[derive(Component)]
 pub enum OverviewButton {
+    EditMode,
     LayerType,
     Save,
     Load,
-    ToggleCameraController,
 }
 fn overview_button_system(
     mut commands: Commands,
@@ -373,7 +420,6 @@ fn overview_button_system(
     mut editor_meta: ResMut<EditorMeta>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mut event_writer: EventWriter<EditorEvents>,
-    mut camera_controller: ResMut<CameraController>,
 ) {
     for (interaction, mut text, mut outline, overview_button) in &mut layer_node_q {
         match *interaction {
@@ -381,22 +427,30 @@ fn overview_button_system(
                 OverviewButton::LayerType => {
                     editor_meta.layer_type = editor_meta.layer_type.next();
                     **text = editor_meta.layer_type.name().into();
-                    commands.trigger(UiRespawnTrigger::TileSelection);
+                    commands.trigger(UiRespawnTrigger::TileSelectionRespawn);
                 }
                 OverviewButton::Save => {
                     event_writer.write(EditorEvents::SaveLevel);
                 }
                 OverviewButton::Load => {
-                    let name = if keyboard_input.pressed(KeyCode::ShiftLeft) {
+                    let mut name = if keyboard_input.pressed(KeyCode::ShiftLeft) {
                         Some("default".into())
                     } else {
                         None
                     };
+                    if cfg!(target_arch = "wasm32") {
+                        name = Some("default".into());
+                    }
                     event_writer.write(EditorEvents::LoadLevel { name });
                 }
-                OverviewButton::ToggleCameraController => {
-                    camera_controller.toggle();
-                    **text = camera_controller.to_string();
+                OverviewButton::EditMode => {
+                    event_writer.write(EditorEvents::ToggleEditMode);
+                    **text = if editor_meta.edit_mode {
+                        "Play mode"
+                    } else {
+                        "Edit mode"
+                    }
+                    .into();
                 }
             },
             Interaction::Hovered => match overview_button {
@@ -405,9 +459,7 @@ fn overview_button_system(
                     text.push_str(editor_meta.layer_type.next().name());
                     outline.color = HOVERED_BUTTON;
                 }
-                OverviewButton::Save
-                | OverviewButton::Load
-                | OverviewButton::ToggleCameraController => {
+                OverviewButton::Save | OverviewButton::Load | OverviewButton::EditMode => {
                     outline.color = HOVERED_BUTTON;
                 }
             },
@@ -416,9 +468,7 @@ fn overview_button_system(
                     outline.color = NORMAL_BUTTON;
                     **text = editor_meta.layer_type.name().into();
                 }
-                OverviewButton::Save
-                | OverviewButton::Load
-                | OverviewButton::ToggleCameraController => {
+                OverviewButton::Save | OverviewButton::Load | OverviewButton::EditMode => {
                     outline.color = NORMAL_BUTTON;
                 }
             },

@@ -3,14 +3,21 @@ use std::collections::HashMap;
 use crate::{
     MainCamera,
     asset_loading::LoadResource,
-    editor::{RemoveOnLevelSwap, spawn_tile},
+    editor::{RemoveOnLevelSwap, spawn_tiled},
     entity::{self, OnSpawnTrigger, Player, Rule},
-    io::{self, SaveFile},
+    io::{self, SaveFile, Tile},
     map,
     movement::DASH_RADIUS,
+    screens::GameState,
+    utils,
 };
 use bevy::{prelude::*, window::PrimaryWindow};
-use bevy_ecs_tilemap::tiles::TileStorage;
+use bevy_ecs_tilemap::{
+    TilemapBundle,
+    anchor::TilemapAnchor,
+    map::{TilemapSize, TilemapTexture, TilemapTileSize, TilemapType},
+    tiles::{TilePos, TileStorage},
+};
 
 /// Tilesize of a single tile in the sheet in pixel.
 /// Width and Height are both the same
@@ -22,15 +29,48 @@ pub const ENTITY_TEXTURE_PATH: &str = "entities.png";
 pub const FIRE_TEXTURE_PATH: &str = "fire.png";
 pub const PLAYER_TEXTURE_PATH: &str = "char.png";
 pub const ENEMIES_TEXTURE_PATH: &str = "enemies.png";
+pub const TILEMAP_OFFSET: Vec2 = Vec2::new(-100., -100.);
+pub const TILEMAP_ANCHOR: TilemapAnchor = TilemapAnchor::BottomLeft;
 
+pub const TILEMAP_MAPSIZE: UVec2 = UVec2::new(20, 20);
 pub fn plugin(app: &mut App) {
     app.init_resource::<Textures>()
+        .add_plugins(bevy_ecs_tilemap::TilemapPlugin)
         .add_plugins(entity::plugin)
         .init_asset_loader::<io::SaveFileAssetLoader>()
         .init_asset::<io::SaveFile>()
         .init_resource::<MousePosition>()
         .add_systems(Update, (update_mouse_position, load_level))
+        .add_systems(OnEnter(GameState::Running), init_map_layers)
         .load_resource::<Textures>();
+}
+fn init_map_layers(mut commands: Commands, textures: Res<map::Textures>) {
+    let tile_size = TilemapTileSize {
+        x: TILESIZE as f32,
+        y: TILESIZE as f32,
+    };
+    let grid_size = tile_size.into();
+
+    let map_type = TilemapType::default();
+    let map_size = TilemapSize {
+        x: TILEMAP_MAPSIZE.x,
+        y: TILEMAP_MAPSIZE.y,
+    };
+    for layer_type in (0..3).map(LayerType::from_u8) {
+        commands
+            .spawn(TilemapBundle {
+                grid_size,
+                map_type,
+                size: map_size,
+                storage: TileStorage::empty(map_size),
+                texture: TilemapTexture::Single(textures.pack[&layer_type].texture.clone()),
+                tile_size,
+                transform: Transform::from_translation((TILEMAP_OFFSET).extend(layer_type.z())),
+                anchor: TilemapAnchor::BottomLeft,
+                ..default()
+            })
+            .insert(layer_type);
+    }
 }
 #[derive(
     Component, Default, PartialEq, Eq, Clone, Copy, serde::Serialize, serde::Deserialize, Hash,
@@ -117,7 +157,7 @@ impl FromWorld for Textures {
                         TexturePack {
                             texture: main_textures,
                             layout: main_layout.clone(),
-                            rules: vec![Rule::new(0, OnSpawnTrigger::Collider)],
+                            rules: vec![Rule::new(0, OnSpawnTrigger::Collider, true)],
                         },
                     );
                 }
@@ -129,9 +169,9 @@ impl FromWorld for Textures {
                             texture,
                             layout: entity_layout.clone(),
                             rules: vec![
-                                Rule::new(0, OnSpawnTrigger::Tower),
-                                Rule::new(1, OnSpawnTrigger::Player),
-                                Rule::new(2, OnSpawnTrigger::Enemy),
+                                Rule::new(0, OnSpawnTrigger::Tower, false),
+                                Rule::new(1, OnSpawnTrigger::Player, false),
+                                Rule::new(2, OnSpawnTrigger::Enemy, false),
                             ],
                         },
                     );
@@ -170,21 +210,23 @@ pub struct MousePosition {
     pub dash_point: Vec2,
 }
 impl MousePosition {
-    /// Converts the world position onto the left bottom corner of the tile grid
-    pub fn to_tile_grid_lb(&self) -> IVec2 {
-        convert_to_tile_grid(self.world_position)
+    pub fn to_tilepos(&self) -> Option<TilePos> {
+        utils::world_to_tilepos(self.world_position, TILEMAP_OFFSET)
     }
-    // Converts the world position onto the center of the corresponding tile grid cell
-    // pub fn to_tile_grid_center(&self) -> IVec2 {
-    //     self.to_tile_grid_lb() + IVec2::new(TILESIZE, TILESIZE) / 2
-    // }
+    pub fn to_tilepos_vec2(&self) -> Option<Vec2> {
+        self.to_tilepos()
+            .map(|tilepos| utils::tile_to_world(&tilepos, TILEMAP_OFFSET.extend(0.)).xy())
+    }
 }
-/// Converts the world position onto the left bottom corner of the tile grid
-pub fn convert_to_tile_grid(position: Vec2) -> IVec2 {
-    IVec2::new(
-        (position.x as i32 + TILESIZE / 2).div_euclid(TILESIZE) * TILESIZE,
-        (position.y as i32 + TILESIZE / 2).div_euclid(TILESIZE) * TILESIZE,
-    )
+pub fn convert_to_tile_pos(position: Vec2) -> TilePos {
+    let mut real_pos = position - TILEMAP_OFFSET;
+    real_pos.x = real_pos.x.max(0.);
+    real_pos.y = real_pos.y.max(0.);
+    let pos = TilePos::new(
+        real_pos.x as u32 / TILESIZE as u32,
+        real_pos.y as u32 / TILESIZE as u32,
+    );
+    pos
 }
 /// Updates the world position of the cursor every frame for other systems to use
 fn update_mouse_position(
@@ -221,35 +263,66 @@ fn load_level(
     mut events: EventReader<AssetEvent<SaveFile>>,
     mut commands: Commands,
     save_files: Res<Assets<SaveFile>>,
-    tiles_q: Query<(Entity, &Sprite, &Transform, &LayerType)>,
     removable: Query<Entity, With<RemoveOnLevelSwap>>,
     textures: Res<map::Textures>,
-    maps: Query<(Entity, &TileStorage)>,
+    mut maps: Query<(Entity, &mut TileStorage, &LayerType)>,
 ) {
     for event in events.read() {
         match event {
             AssetEvent::LoadedWithDependencies { id } | AssetEvent::Modified { id } => {
-                for (e, _, _, _) in &tiles_q {
-                    commands.entity(e).despawn();
-                }
                 for e in &removable {
                     commands.entity(e).despawn();
                 }
                 let level = save_files.get(*id).unwrap();
+                for (_e, mut storage, _) in &mut maps {
+                    storage
+                        .drain()
+                        .for_each(|tile| commands.entity(tile).despawn());
+                }
                 for (layer_type, tiles) in &level.layers {
+                    let (tilemap_e, mut storage, _) = maps
+                        .iter_mut()
+                        .find(|(_e, _storage, map_layer_type)| layer_type == *map_layer_type)
+                        .unwrap();
                     let rules = &textures.pack[layer_type].rules;
                     for tile in &tiles.tiles {
-                        let rule = rules.iter().find(|rule| rule.target_index == tile.index);
-                        let e = commands
-                            .spawn(spawn_tile(tile.pos, &textures, tile.index, *layer_type))
-                            .id();
-                        if let Some(rule) = rule {
-                            commands.trigger_targets(*rule, e);
-                        }
+                        spawn_tile(
+                            rules,
+                            &mut commands,
+                            tile,
+                            tilemap_e,
+                            &mut storage,
+                            *layer_type,
+                        );
                     }
                 }
             }
             _ => {}
         }
+    }
+}
+pub fn spawn_tile(
+    rules: &[Rule],
+    commands: &mut Commands,
+    tile: &Tile,
+    tilemap_e: Entity,
+    storage: &mut TileStorage,
+    layer_type: LayerType,
+) {
+    let rule = rules.iter().find(|rule| rule.target_index == tile.index);
+
+    let spawn_in_tilemap = rule.map(|rule| rule.spawn_in_tilemap).unwrap_or(true);
+    let tile_pos = TilePos::new(tile.pos.x, tile.pos.y);
+    let e = if spawn_in_tilemap {
+        let e = commands
+            .spawn(spawn_tiled(tilemap_e, tile_pos, tile.index, layer_type))
+            .id();
+        storage.set(&tile_pos, e);
+        e
+    } else {
+        commands.spawn((tile_pos, layer_type)).id()
+    };
+    if let Some(rule) = rule {
+        commands.trigger_targets(*rule, e);
     }
 }

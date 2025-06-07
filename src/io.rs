@@ -92,7 +92,7 @@ pub struct Layer {
 #[derive(serde::Serialize, serde::Deserialize, Clone, Copy)]
 pub struct Tile {
     /// grid position
-    pub pos: IVec2,
+    pub pos: UVec2,
     /// texture atlas index
     pub index: usize,
 }
