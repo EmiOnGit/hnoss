@@ -42,7 +42,7 @@ fn spawn_main_menu(mut commands: Commands, textures: Res<Textures>) {
                 },
                 ImageNode::new(textures.main_menu_image.clone()),
             ),
-            widget::button("Play", enter_gamplay_screen),
+            widget::button("Play", enter_gameplay_screen),
             widget::button("Credits", open_credits_menu),
         ],
     ));
