@@ -235,12 +235,12 @@ fn enemy_spawn() -> impl Bundle {
 pub struct Flag;
 fn check_enemy_spawn(mut enemies: Query<(&mut EnemyAnimation, &Sprite, &Visibility)>) {
     for (mut animation, sprite, visibility) in &mut enemies {
-        if *animation == EnemyAnimation::Spawn && *visibility != Visibility::Hidden {
-            if sprite.texture_atlas.as_ref().unwrap().index
+        if *animation == EnemyAnimation::Spawn
+            && *visibility != Visibility::Hidden
+            && sprite.texture_atlas.as_ref().unwrap().index
                 == animation.as_animation().last_sprite_index()
-            {
-                *animation = EnemyAnimation::Idle;
-            }
+        {
+            *animation = EnemyAnimation::Idle;
         }
     }
 }

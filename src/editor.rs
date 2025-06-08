@@ -302,8 +302,8 @@ fn process_editor_events(
                         continue;
                     };
                     commands
-                        .entity(cam.clone())
-                        .insert(ScreenShake::new(TRAUMA));
+                        .entity(*cam)
+                        .insert(ScreenShake::new(TRAUMA, 50., 1.));
                     transform.translation = translation;
                 }
                 for (mut visibility, mut mode) in &mut enemies {

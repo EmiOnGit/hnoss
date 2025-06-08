@@ -13,7 +13,7 @@ use bevy::{
 use crate::{
     MainCamera,
     animation::{AnimationConfig, EnemyAnimation, PlayerAnimation},
-    combat::{DashTargetedBy, DashTargeting, Tame},
+    combat::{DashTargetedBy, DashTargeting, ScreenShake, Tame},
     editor::{EditorEvents, EditorMeta},
     entity::{Enemy, Pit, Player, PlayerMode},
     map::{MousePosition, Textures},
@@ -208,6 +208,7 @@ fn dash(
     mut commands: Commands,
     mouse_position: Res<MousePosition>,
     players: Single<(&mut LinearVelocity, &GlobalTransform, &Children)>,
+    cam: Single<Entity, With<MainCamera>>,
     mut player_comp: Query<(Entity, &mut PlayerAnimation, &Player)>,
     mut enemies: Query<
         (Entity, &GlobalTransform, &mut EnemyAnimation, &Visibility),
@@ -245,6 +246,9 @@ fn dash(
         {
             return;
         }
+        commands
+            .entity(cam.into_inner())
+            .insert(ScreenShake::new(0.08, 300., 0.5));
         let distance = enemy_pos(closest_transform) - player_pos;
         commands.entity(entity).insert(DashTargeting(enemy_e));
         *animation = PlayerAnimation::Dash;

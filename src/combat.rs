@@ -167,11 +167,15 @@ pub struct DashTargeting(pub Entity);
 #[derive(Component)]
 pub struct ScreenShake {
     trauma: f32,
+    angle_speed: f32,
+    angle_multiplier: f32,
 }
 impl ScreenShake {
-    pub fn new(trauma: f32) -> Self {
+    pub fn new(trauma: f32, angle_speed: f32, angle_multiplier: f32) -> Self {
         ScreenShake {
             trauma: trauma.clamp(0.0, 1.0),
+            angle_speed,
+            angle_multiplier,
         }
     }
 }
@@ -185,7 +189,8 @@ fn screen_shake(
     const TRAUMA_DECAY_SPEED: f32 = 0.7; // How fast trauma decays
     let (e, mut transform, mut screen_shake) = query.into_inner();
     let shake = screen_shake.trauma * screen_shake.trauma;
-    let angle = (50. * shake).sin().to_radians();
+    let angle =
+        screen_shake.angle_multiplier * (screen_shake.angle_speed * shake).sin().to_radians();
     if shake > 0.0 {
         let rotation = Quat::from_rotation_z(angle);
         transform.rotation = transform
