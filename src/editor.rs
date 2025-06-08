@@ -640,7 +640,7 @@ fn debug(
         }
     }
     if keys.just_pressed(KeyCode::KeyT) {
-        if let ClearColorConfig::Custom(current) = camera.clear_color.clone() {
+        if let ClearColorConfig::Custom(current) = camera.clear_color {
             if current == BACKGROUND_COLOR {
                 camera.clear_color = ClearColorConfig::Custom(DEBUG_BACKGROUND_COLOR);
             } else {
