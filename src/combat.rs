@@ -2,7 +2,7 @@ use crate::{
     MainCamera,
     animation::EnemyAnimation,
     editor::RemoveOnLevelSwap,
-    entity::{Enemy, Player, PlayerMode, Portal, Tower},
+    entity::{Enemy, Player, PlayerMode, Portal, Tower, TowerCountdown},
     map::Textures,
     movement::TIRED_TIME,
     screens::GameState,
@@ -55,6 +55,7 @@ fn update_player_mode(
 }
 fn despawn_enemies(
     mut commands: Commands,
+    mut tower_countdown: ResMut<TowerCountdown>,
     mut enemies: Query<(&mut Visibility, &mut EnemyAnimation, &Transform, &Sprite), With<Enemy>>,
     mut towers: Query<(&mut Tower, &mut Visibility, &Transform), Without<Enemy>>,
 ) {
@@ -78,7 +79,8 @@ fn despawn_enemies(
                         < ENEMY_EXPLOSION_RADIUS
                 {
                     *tower_visibility = Visibility::Inherited;
-                    tower.set_active(3.);
+                    tower.active = true;
+                    tower_countdown.timer = Some(Timer::from_seconds(3., TimerMode::Once));
                 }
             }
             *enemy_animation = EnemyAnimation::Spawn;
@@ -116,26 +118,27 @@ fn update_explosion_indicator(
 fn check_tower(
     mut towers: Query<(&mut Tower, &mut Visibility)>,
     time: Res<Time>,
+    mut tower_countdown: ResMut<TowerCountdown>,
     mut portals: Query<&mut Portal>,
 ) {
-    let mut all_lit = !towers.is_empty() && towers.iter().any(|(tower, _)| tower.activatable);
+    if tower_countdown.level_complete {
+        return;
+    }
 
-    for (mut tower, mut visibility) in &mut towers {
-        if let Some(timer) = &mut tower.active {
-            timer.tick(time.delta());
-            if timer.finished() {
+    if let Some(timer) = &mut tower_countdown.timer {
+        timer.tick(time.delta());
+        if timer.finished() {
+            for (mut tower, mut visibility) in &mut towers {
+                tower.active = false;
                 *visibility = Visibility::Hidden;
-                tower.active = None;
             }
-        } else {
-            all_lit = false;
+            tower_countdown.timer = None;
         }
     }
+    let all_lit = !towers.is_empty() && towers.iter().all(|(tower, _)| tower.active);
     if all_lit {
-        // we need to dirty flag them to avoid a possible level skip
-        for (mut tower, _) in &mut towers {
-            tower.activatable = false;
-        }
+        info!("Unlocking the portal");
+        tower_countdown.level_complete = true;
         for mut portal in &mut portals {
             *portal = Portal::Open;
         }

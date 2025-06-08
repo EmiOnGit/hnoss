@@ -4,7 +4,7 @@ use crate::{
     MainCamera,
     asset_loading::LoadResource,
     editor::{EditorEvents, RemoveOnLevelSwap, spawn_tiled},
-    entity::{self, OnSpawnTrigger, Player, Portal, Rule},
+    entity::{self, OnSpawnTrigger, Player, Portal, Rule, TowerCountdown},
     io::{self, SaveFile, Tile},
     map,
     movement::DASH_RADIUS,
@@ -37,8 +37,10 @@ pub const ENEMIES_TEXTURE_PATH: &str = "enemies.png";
 const MAIN_MENU_IMAGE: &str = "goblin_splash.jpg";
 pub const TILEMAP_OFFSET: Vec2 = Vec2::new(-100., -100.);
 pub const TILEMAP_ANCHOR: TilemapAnchor = TilemapAnchor::BottomLeft;
+pub const BACKGROUND_COLOR: Color = Color::srgba_u8(41, 41, 41, 255);
+pub const DEBUG_BACKGROUND_COLOR: Color = Color::srgba_u8(81, 81, 81, 255);
 
-pub const TILEMAP_MAPSIZE: UVec2 = UVec2::new(20, 20);
+pub const TILEMAP_MAPSIZE: UVec2 = UVec2::new(40, 18);
 pub fn plugin(app: &mut App) {
     app.init_resource::<Textures>()
         .add_plugins(bevy_ecs_tilemap::TilemapPlugin)
@@ -85,7 +87,7 @@ fn init_map(
             .insert(layer_type);
     }
     event_writer.write(EditorEvents::LoadLevel {
-        name: Some("default".into()),
+        name: Some("level0".into()),
     });
 }
 #[derive(
@@ -176,7 +178,8 @@ impl FromWorld for Textures {
                             texture: main_textures,
                             layout: main_layout.clone(),
                             rules: vec![
-                                Rule::new(0, OnSpawnTrigger::Collider, true),
+                                Rule::new(5, OnSpawnTrigger::Collider, true),
+                                Rule::new(8, OnSpawnTrigger::Tower, true),
                                 Rule::new(9, OnSpawnTrigger::Pit, true),
                                 Rule::new(13, OnSpawnTrigger::Pit, true),
                                 Rule::new(16, OnSpawnTrigger::Pit, true),
@@ -195,10 +198,10 @@ impl FromWorld for Textures {
                             texture,
                             layout: entity_layout.clone(),
                             rules: vec![
-                                Rule::new(0, OnSpawnTrigger::Tower, false),
-                                Rule::new(1, OnSpawnTrigger::Player, false),
-                                Rule::new(2, OnSpawnTrigger::Enemy, false),
-                                Rule::new(3, OnSpawnTrigger::Portal, true),
+                                Rule::new(0, OnSpawnTrigger::Player, false),
+                                Rule::new(1, OnSpawnTrigger::Enemy, false),
+                                Rule::new(2, OnSpawnTrigger::Portal, true),
+                                Rule::new(3, OnSpawnTrigger::PlayerSpawnPlatform, true),
                             ],
                         },
                     );
@@ -303,6 +306,7 @@ fn load_level(
     mut events: EventReader<AssetEvent<SaveFile>>,
     mut commands: Commands,
     save_files: Res<Assets<SaveFile>>,
+    mut tower_countdown: ResMut<TowerCountdown>,
     removable: Query<Entity, With<RemoveOnLevelSwap>>,
     textures: Res<map::Textures>,
     mut maps: Query<(Entity, &mut TileStorage, &LayerType)>,
@@ -313,6 +317,8 @@ fn load_level(
                 for e in &removable {
                     commands.entity(e).despawn();
                 }
+                tower_countdown.timer = Some(Timer::from_seconds(0., TimerMode::Once));
+                tower_countdown.level_complete = false;
                 let level = save_files.get(*id).unwrap();
                 for (_e, mut storage, _) in &mut maps {
                     storage
@@ -369,8 +375,8 @@ pub fn spawn_tile(
 fn check_portal_activation(mut portals: Query<(&mut TileTextureIndex, &Portal), Changed<Portal>>) {
     for (mut index, portal) in &mut portals {
         *index = match portal {
-            Portal::Closed => TileTextureIndex(3),
-            Portal::Open => TileTextureIndex(4),
+            Portal::Closed => TileTextureIndex(2),
+            Portal::Open => TileTextureIndex(3),
         }
     }
 }

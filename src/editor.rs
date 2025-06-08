@@ -6,7 +6,7 @@ use bevy::{
     prelude::*,
 };
 use bevy_ecs_tilemap::{
-    map::TilemapId,
+    map::{TilemapId, TilemapSize},
     tiles::{TileBundle, TilePos, TileStorage, TileTextureIndex},
 };
 
@@ -14,9 +14,12 @@ use crate::{
     GameState, MainCamera,
     animation::{EnemyAnimation, PlayerAnimation},
     combat::{ScreenShake, TRAUMA},
-    entity::{Enemy, Player, PlayerMode},
+    entity::{Enemy, Player, PlayerMode, TowerCountdown},
     io::{self, SaveFile, Tile},
-    map::{self, LayerType, MousePosition, TILEMAP_OFFSET, TILESIZE, convert_to_tile_pos},
+    map::{
+        self, BACKGROUND_COLOR, DEBUG_BACKGROUND_COLOR, LayerType, MousePosition, TILEMAP_OFFSET,
+        TILESIZE, convert_to_tile_pos,
+    },
     utils::{self, iter_grid_rect, tile_to_world},
     widget,
 };
@@ -35,7 +38,7 @@ pub fn plugin(app: &mut App) {
         .add_systems(
             Update,
             (
-                debug_player,
+                debug,
                 process_editor_events,
                 tile_button_system,
                 overview_button_system,
@@ -178,8 +181,9 @@ fn process_editor_events(
     mut players: Query<(&mut Player, &mut PlayerAnimation, &ChildOf, &SaveOverride)>,
     mut enemies: Query<(&mut Visibility, &mut EnemyAnimation), With<Enemy>>,
     mut parent_player: Query<(&mut LinearVelocity, &mut Transform)>,
+    mut tower_timer: ResMut<TowerCountdown>,
     override_tiles: Query<(Entity, &LayerType, &SaveOverride, Option<&ChildOf>)>,
-    mut tile_map: Query<(Entity, &mut TileStorage, &LayerType)>,
+    mut tile_map: Query<(Entity, &mut TileStorage, &TilemapSize, &LayerType)>,
 ) {
     for event in events.read() {
         match event {
@@ -211,9 +215,9 @@ fn process_editor_events(
                 if count > 0 {
                     info!("despawned {} tiles", count);
                 }
-                let (tilemap_e, mut storage, _) = tile_map
+                let (tilemap_e, mut storage, tilemap_size, _) = tile_map
                     .iter_mut()
-                    .find(|(_e, _storage, layer_type)| **layer_type == editor_meta.layer_type)
+                    .find(|(_e, _storage, _, layer_type)| **layer_type == editor_meta.layer_type)
                     .unwrap();
                 // spawn new tiles
                 let rules = &textures.pack[&editor_meta.layer_type].rules;
@@ -223,6 +227,9 @@ fn process_editor_events(
                         .position(|rule| rule.target_index == selected_tile.index)
                         .unwrap_or_default();
                     for tile_pos in v {
+                        if tilemap_size.x <= tile_pos.x || tilemap_size.y <= tile_pos.y {
+                            continue;
+                        }
                         map::spawn_tile(
                             &[rules[rule_index]],
                             &mut commands,
@@ -297,11 +304,12 @@ fn process_editor_events(
                     let Ok((mut velo, mut transform)) = parent_player.get_mut(parent.0) else {
                         continue;
                     };
+                    tower_timer.timer = Some(Timer::from_seconds(0., TimerMode::Once));
                     *animation = PlayerAnimation::Idle;
                     player.mode = PlayerMode::Normal;
                     let translation = tile_to_world(
                         &tile.0.pos.into(),
-                        TILEMAP_OFFSET.extend(LayerType::Entities.z()),
+                        TILEMAP_OFFSET.extend(LayerType::Entities.z() + 1.),
                     );
                     commands
                         .entity(*cam)
@@ -356,13 +364,11 @@ fn init_ui_overview(
             ],
         ))
         .id();
-    if cfg!(not(target_arch = "wasm32")) {
-        commands
-            .entity(node)
-            .with_child(widget::overview_button(OverviewButton::Save, "Save"));
-    }
+    commands
+        .entity(node)
+        .with_child(widget::overview_button(OverviewButton::Save, "Save"));
+
     if editor_meta.edit_mode {
-        println!("add layer type");
         commands.entity(node).with_child(widget::overview_button(
             OverviewButton::LayerType,
             editor_meta.layer_type.name(),
@@ -480,12 +486,12 @@ fn overview_button_system(
                 }
                 OverviewButton::Load => {
                     let mut name = if keyboard_input.pressed(KeyCode::ShiftLeft) {
-                        Some("default".into())
+                        Some("level0".into())
                     } else {
                         None
                     };
                     if cfg!(target_arch = "wasm32") {
-                        name = Some("default".into());
+                        name = Some("level0".into());
                     }
                     editor_meta.current_level_index = 0;
                     event_writer.write(EditorEvents::LoadLevel { name });
@@ -618,7 +624,8 @@ pub fn update_scroll_position(
         }
     }
 }
-fn debug_player(
+fn debug(
+    mut camera: Single<&mut Camera, With<MainCamera>>,
     keys: Res<ButtonInput<KeyCode>>,
     players: Query<&Sprite, With<Player>>,
     atlases: Res<Assets<TextureAtlasLayout>>,
@@ -630,6 +637,15 @@ fn debug_player(
                 .unwrap();
             println!("{:?}", &sprite.texture_atlas);
             println!("{:?}", &atlas);
+        }
+    }
+    if keys.just_pressed(KeyCode::KeyT) {
+        if let ClearColorConfig::Custom(current) = camera.clear_color.clone() {
+            if current == BACKGROUND_COLOR {
+                camera.clear_color = ClearColorConfig::Custom(DEBUG_BACKGROUND_COLOR);
+            } else {
+                camera.clear_color = ClearColorConfig::Custom(BACKGROUND_COLOR);
+            }
         }
     }
 }

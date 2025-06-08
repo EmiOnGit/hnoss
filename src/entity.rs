@@ -15,14 +15,17 @@ use bevy::prelude::*;
 use bevy_ecs_tilemap::tiles::{TilePos, TileStorage};
 
 pub fn plugin(app: &mut App) {
-    app.add_observer(apply_rule).add_systems(
-        Update,
-        (check_enemy_spawn).run_if(in_state(GameState::Running)),
-    );
+    app.add_observer(apply_rule)
+        .init_resource::<TowerCountdown>()
+        .add_systems(
+            Update,
+            (check_enemy_spawn).run_if(in_state(GameState::Running)),
+        );
 }
 #[derive(Reflect, Clone, Copy, Debug)]
 pub enum OnSpawnTrigger {
     Player,
+    PlayerSpawnPlatform,
     Tower,
     Collider,
     Pit,
@@ -53,6 +56,7 @@ fn apply_rule(
     mut commands: Commands,
     transf: Query<&mut Transform>,
     tile_positions: Query<&TilePos>,
+    player_spawn_platforms: Query<Entity, With<PlayerSpawnPlatform>>,
     textures: Res<map::Textures>,
     mut tile_map: Query<(Entity, &LayerType), With<TileStorage>>,
     players: Query<(Entity, &ChildOf), With<Player>>,
@@ -81,7 +85,7 @@ fn apply_rule(
                 pos: tile_pos.into(),
                 index: rule.target_index,
             };
-            commands.entity(entity).insert((
+            commands.spawn((
                 RemoveOnLevelSwap,
                 sprite,
                 tower_spawn(),
@@ -89,15 +93,33 @@ fn apply_rule(
                 SaveOverride(tile),
             ));
         }
-        OnSpawnTrigger::Collider => {}
-        OnSpawnTrigger::Player => {
+        OnSpawnTrigger::Collider => {
+            let tile_pos = tile_positions.get(entity).unwrap();
+            let position = tile_to_world(tile_pos, entities_tilemap_translation);
+            commands.entity(entity).insert((
+                avian::RigidBody::Static,
+                avian::Collider::rectangle(TILESIZE as f32, TILESIZE as f32),
+                Transform::from_translation(position),
+            ));
+        }
+        OnSpawnTrigger::Player | OnSpawnTrigger::PlayerSpawnPlatform => {
             for (_player, parent) in &players {
                 commands.entity(parent.0).despawn();
             }
+            for entity in &player_spawn_platforms {
+                commands.entity(entity).despawn();
+            }
             let tile_pos = tile_positions.get(entity).unwrap();
+            let entity = if matches!(trigger, OnSpawnTrigger::PlayerSpawnPlatform) {
+                commands.entity(entity).insert(PlayerSpawnPlatform);
+                commands.spawn_empty().id()
+            } else {
+                entity
+            };
             let player_position = tile_to_world(tile_pos, entities_tilemap_translation);
             commands
                 .spawn((
+                    PlayerController,
                     Visibility::Inherited,
                     RemoveOnLevelSwap,
                     avian::RigidBody::Kinematic,
@@ -177,22 +199,23 @@ fn apply_rule(
         }
     };
 }
+#[derive(Resource, Default)]
+pub struct TowerCountdown {
+    pub timer: Option<Timer>,
+    pub level_complete: bool,
+}
 #[derive(Component)]
 pub struct Tower {
-    pub active: Option<Timer>,
+    // pub active: Option<Timer>,
+    pub active: bool,
     pub activatable: bool,
 }
 impl Default for Tower {
     fn default() -> Self {
         Tower {
-            active: None,
+            active: false,
             activatable: true,
         }
-    }
-}
-impl Tower {
-    pub fn set_active(&mut self, active_time_sec: f32) {
-        self.active = Some(Timer::from_seconds(active_time_sec, TimerMode::Once));
     }
 }
 fn tower_spawn() -> impl Bundle {
@@ -207,6 +230,10 @@ pub enum Portal {
     Closed,
     Open,
 }
+#[derive(Component)]
+pub struct PlayerController;
+#[derive(Component)]
+pub struct PlayerSpawnPlatform;
 #[derive(Component)]
 pub struct Player {
     pub speed: f32,
@@ -246,7 +273,7 @@ fn enemy_spawn() -> impl Bundle {
         avian::LinearVelocity::ZERO,
         CollisionLayers::new(
             CollisionLayer::Enemy,
-            [CollisionLayer::Enemy, CollisionLayer::Block],
+            [CollisionLayer::Player, CollisionLayer::Block],
         ),
         avian::LockedAxes::ROTATION_LOCKED,
         avian::Collider::rectangle(ENEMYSIZE.x as f32 / 2., 5.),

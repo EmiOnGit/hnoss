@@ -32,10 +32,9 @@ fn check_assets(asset_server: ResMut<AssetServer>, mut loading_queue: ResMut<Ass
             break;
         };
         if asset_server.is_loaded_with_dependencies(loading.id()) {
-            println!("loaded");
+            info!("loaded level");
             loading_queue.finished.push(loading);
         } else {
-            println!("not yet loaded");
             loading_queue.loading.push_back(loading);
         }
     }

@@ -14,6 +14,8 @@ use bevy::asset::AssetMetaCheck;
 use bevy::prelude::*;
 use screens::GameState;
 
+use crate::map::BACKGROUND_COLOR;
+
 fn main() {
     App::new().add_plugins(app_plugin).run();
 }
@@ -51,7 +53,7 @@ fn init_camera(mut commands: Commands) {
     commands.spawn((
         Camera2d,
         Camera {
-            // hdr: true,
+            clear_color: ClearColorConfig::Custom(BACKGROUND_COLOR),
             ..default()
         },
         Projection::Orthographic(projection.clone()),

@@ -1,8 +1,11 @@
 use std::{f32::consts::PI, time::Duration};
 
 use avian2d::{
-    math::Vector,
-    prelude::{CollidingEntities, Gravity, LinearVelocity, PhysicsLayer},
+    math::{AdjustPrecision, Scalar, Vector},
+    prelude::{
+        ColliderOf, CollidingEntities, Collisions, Gravity, LinearVelocity, NarrowPhaseSet,
+        PhysicsLayer, PhysicsSchedule, Position, RigidBody, Sensor,
+    },
 };
 use bevy::{
     color::palettes::tailwind::{PURPLE_400, RED_400, YELLOW_400},
@@ -15,7 +18,7 @@ use crate::{
     animation::{AnimationConfig, EnemyAnimation, PlayerAnimation},
     combat::{DashTargetedBy, DashTargeting, Tame},
     editor::{EditorEvents, EditorMeta},
-    entity::{Enemy, Pit, Player, PlayerMode, Portal},
+    entity::{Enemy, Pit, Player, PlayerController, PlayerMode, Portal},
     io::SaveFile,
     map::{MousePosition, Textures},
     screens::GameState,
@@ -27,6 +30,7 @@ pub const TIRED_TIME: Duration = Duration::from_secs(3);
 pub const ACTIVE_TIME: Duration = Duration::from_secs(2);
 pub fn plugin(app: &mut App) {
     app.add_plugins(avian2d::PhysicsPlugins::default().with_length_unit(1.))
+        // .add_plugins(PhysicsDebugPlugin::default())
         .insert_resource(Gravity(Vector::ZERO))
         .add_systems(
             Update,
@@ -54,6 +58,10 @@ pub fn plugin(app: &mut App) {
                 check_collisions,
             )
                 .run_if(in_state(GameState::Running)),
+        )
+        .add_systems(
+            PhysicsSchedule,
+            kinematic_controller_collisions.in_set(NarrowPhaseSet::Last),
         );
 }
 #[derive(PhysicsLayer, Default)]
@@ -245,9 +253,6 @@ fn dash(
             return;
         }
         let distance = enemy_pos(closest_transform) - player_pos;
-        println!("{player_pos:?}");
-        println!("{:?}", enemy_pos(closest_transform));
-        println!("dir{}", distance.normalize());
         commands.entity(entity).insert(DashTargeting(enemy_e));
         *animation = PlayerAnimation::Dash;
         *closest_animation = EnemyAnimation::DashTargeted;
@@ -342,14 +347,139 @@ fn check_collisions(
             event_writer.write(EditorEvents::RespawnPlayer);
         }
     }
-    for (colliding_entities, _portal) in &portals {
-        if colliding_entities.contains(&player.0) {
+    for (colliding_entities, portal) in &portals {
+        if colliding_entities.contains(&player.0) && *portal == Portal::Open {
             editor_meta.current_level_index += 1;
             let number = editor_meta.current_level_index.to_string();
 
+            info!("start loading level {number}");
             let handle =
                 asset_server.load::<SaveFile>(String::from("level/") + "level" + &number + ".ron");
             editor_meta.current_level = handle;
+        }
+    }
+}
+// DO NOT USE
+// I do not know how this works one bit and copied it from the avian examples
+fn kinematic_controller_collisions(
+    collisions: Collisions,
+    bodies: Query<&RigidBody>,
+    collider_rbs: Query<&ColliderOf, Without<Sensor>>,
+    mut character_controllers: Query<
+        (&mut Position, &mut LinearVelocity),
+        (With<RigidBody>, With<PlayerController>),
+    >,
+    time: Res<Time>,
+) {
+    // Iterate through collisions and move the kinematic body to resolve penetration
+    for contacts in collisions.iter() {
+        // Get the rigid body entities of the colliders (colliders could be children)
+        let Ok([&ColliderOf { body: rb1 }, &ColliderOf { body: rb2 }]) =
+            collider_rbs.get_many([contacts.collider1, contacts.collider2])
+        else {
+            continue;
+        };
+
+        // Get the body of the character controller and whether it is the first
+        // or second entity in the collision.
+        let is_first: bool;
+
+        let character_rb: RigidBody;
+        let is_other_dynamic: bool;
+
+        let (mut position, mut linear_velocity) =
+            if let Ok(character) = character_controllers.get_mut(rb1) {
+                is_first = true;
+                character_rb = *bodies.get(rb1).unwrap();
+                is_other_dynamic = bodies.get(rb2).is_ok_and(|rb| rb.is_dynamic());
+                character
+            } else if let Ok(character) = character_controllers.get_mut(rb2) {
+                is_first = false;
+                character_rb = *bodies.get(rb2).unwrap();
+                is_other_dynamic = bodies.get(rb1).is_ok_and(|rb| rb.is_dynamic());
+                character
+            } else {
+                continue;
+            };
+
+        // This system only handles collision response for kinematic character controllers.
+        if !character_rb.is_kinematic() {
+            continue;
+        }
+
+        // Iterate through contact manifolds and their contacts.
+        // Each contact in a single manifold shares the same contact normal.
+        for manifold in contacts.manifolds.iter() {
+            let normal = if is_first {
+                -manifold.normal
+            } else {
+                manifold.normal
+            };
+
+            let mut deepest_penetration: Scalar = Scalar::MIN;
+
+            // Solve each penetrating contact in the manifold.
+            for contact in manifold.points.iter() {
+                if contact.penetration > 0.0 {
+                    position.0 += normal * contact.penetration;
+                }
+                deepest_penetration = deepest_penetration.max(contact.penetration);
+            }
+
+            // For now, this system only handles velocity corrections for collisions against static geometry.
+            if is_other_dynamic {
+                continue;
+            }
+
+            // Determine if the slope is climbable or if it's too steep to walk on.
+            let climbable = false;
+
+            if deepest_penetration > 0.0 {
+                // If the slope is climbable, snap the velocity so that the character
+                // up and down the surface smoothly.
+                {
+                    // The character is intersecting an unclimbable object, like a wall.
+                    // We want the character to slide along the surface, similarly to
+                    // a collide-and-slide algorithm.
+
+                    // Don't apply an impulse if the character is moving away from the surface.
+                    if linear_velocity.dot(normal) > 0.0 {
+                        continue;
+                    }
+
+                    // Slide along the surface, rejecting the velocity along the contact normal.
+                    let impulse = linear_velocity.reject_from_normalized(normal);
+                    linear_velocity.0 = impulse;
+                }
+            } else {
+                // The character is not yet intersecting the other object,
+                // but the narrow phase detected a speculative collision.
+                //
+                // We need to push back the part of the velocity
+                // that would cause penetration within the next frame.
+
+                let normal_speed = linear_velocity.dot(normal);
+
+                // Don't apply an impulse if the character is moving away from the surface.
+                if normal_speed > 0.0 {
+                    continue;
+                }
+
+                // Compute the impulse to apply.
+                let impulse_magnitude =
+                    normal_speed - (deepest_penetration / time.delta_secs_f64().adjust_precision());
+                let mut impulse = impulse_magnitude * normal * 1.2;
+
+                // Apply the impulse differently depending on the slope angle.
+                if climbable {
+                    // Avoid sliding down slopes.
+                    linear_velocity.y -= impulse.y.min(0.0);
+                } else {
+                    // Avoid climbing up walls.
+                    impulse.y = impulse.y.max(0.0);
+                    linear_velocity.0 -= impulse;
+                }
+            }
         }
     }
 }
