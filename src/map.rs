@@ -112,7 +112,7 @@ impl LayerType {
     pub fn next(&self) -> Self {
         LayerType::from_u8((*self as u8 + 1) % 3)
     }
-    pub fn z(&self) -> f32 {
+    pub const fn z(&self) -> f32 {
         match self {
             LayerType::Bg => 0.,
             LayerType::Fg => 1.,
@@ -149,7 +149,7 @@ impl FromWorld for Textures {
     fn from_world(world: &mut World) -> Self {
         let mut texture_atlas_layouts = world.resource_mut::<Assets<TextureAtlasLayout>>();
         let main_layout =
-            TextureAtlasLayout::from_grid(UVec2::splat(TILESIZE as u32), 4, 4, None, None);
+            TextureAtlasLayout::from_grid(UVec2::splat(TILESIZE as u32), 4, 5, None, None);
         let entity_layout =
             TextureAtlasLayout::from_grid(UVec2::splat(TILESIZE as u32), 8, 4, None, None);
         let fire_layout =
@@ -172,7 +172,15 @@ impl FromWorld for Textures {
                         TexturePack {
                             texture: main_textures,
                             layout: main_layout.clone(),
-                            rules: vec![Rule::new(0, OnSpawnTrigger::Collider, true)],
+                            rules: vec![
+                                Rule::new(0, OnSpawnTrigger::Collider, true),
+                                Rule::new(9, OnSpawnTrigger::Pit, true),
+                                Rule::new(13, OnSpawnTrigger::Pit, true),
+                                Rule::new(16, OnSpawnTrigger::Pit, true),
+                                Rule::new(17, OnSpawnTrigger::Pit, true),
+                                Rule::new(18, OnSpawnTrigger::Pit, true),
+                                Rule::new(19, OnSpawnTrigger::Pit, true),
+                            ],
                         },
                     );
                 }

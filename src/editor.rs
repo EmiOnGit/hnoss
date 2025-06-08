@@ -10,11 +10,13 @@ use bevy_ecs_tilemap::{
 };
 
 use crate::{
-    GameState,
-    entity::Player,
+    GameState, MainCamera,
+    animation::EnemyAnimation,
+    combat::{ScreenShake, TRAUMA},
+    entity::{Enemy, Player, PlayerMode},
     io::{self, SaveFile, Tile},
     map::{self, LayerType, MousePosition, TILEMAP_OFFSET, TILESIZE, convert_to_tile_pos},
-    utils::{self, iter_grid_rect},
+    utils::{self, iter_grid_rect, tile_to_world},
     widget,
 };
 pub const NORMAL_BUTTON: Color = Color::srgb(0.15, 0.15, 0.15);
@@ -127,6 +129,7 @@ fn current_tile_ui(
 #[derive(Event)]
 pub enum EditorEvents {
     SpawnTiles(Vec2, Vec2),
+    RespawnPlayer,
     SaveLevel,
     /// Name of the file without the extension so 'assets/level1.ron' becomes 'level1'
     /// If [`Option::None`] is provided then a file dialog is opened
@@ -163,6 +166,7 @@ fn process_editor_events(
     asset_server: Res<AssetServer>,
     mut asset_event_writer: EventWriter<AssetEvent<SaveFile>>,
     textures: Res<map::Textures>,
+    cam: Single<Entity, With<MainCamera>>,
     tiles_q: Query<(
         Entity,
         &TileTextureIndex,
@@ -170,6 +174,9 @@ fn process_editor_events(
         &LayerType,
         Option<&SaveOverride>,
     )>,
+    mut players: Query<(&mut Player, &ChildOf, &SaveOverride)>,
+    mut enemies: Query<(&mut Visibility, &mut EnemyAnimation), With<Enemy>>,
+    mut transforms: Query<&mut Transform>,
     override_tiles: Query<(Entity, &LayerType, &SaveOverride, Option<&ChildOf>)>,
     mut tile_map: Query<(Entity, &mut TileStorage, &LayerType)>,
 ) {
@@ -282,6 +289,26 @@ fn process_editor_events(
                     commands.trigger(UiRespawnTrigger::TileSelectionRespawn);
                 } else {
                     commands.trigger(UiRespawnTrigger::TileSelectionRemove);
+                }
+            }
+            EditorEvents::RespawnPlayer => {
+                for (mut player, parent, tile) in &mut players {
+                    player.mode = PlayerMode::Normal;
+                    let translation = tile_to_world(
+                        &tile.0.pos.into(),
+                        TILEMAP_OFFSET.extend(LayerType::Entities.z()),
+                    );
+                    let Ok(mut transform) = transforms.get_mut(parent.0) else {
+                        continue;
+                    };
+                    commands
+                        .entity(cam.clone())
+                        .insert(ScreenShake::new(TRAUMA));
+                    transform.translation = translation;
+                }
+                for (mut visibility, mut mode) in &mut enemies {
+                    *visibility = Visibility::Visible;
+                    *mode = EnemyAnimation::Spawn;
                 }
             }
         }

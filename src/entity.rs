@@ -1,24 +1,31 @@
 use crate::{
-    animation::{self, AnimationConfig, EnemyAnimation, PlayerAnimation},
+    animation::{self, Action, AnimationConfig, EnemyAnimation, PlayerAnimation},
     combat::Tame,
     editor::{RemoveOnLevelSwap, SaveOverride},
     io,
-    map::{self, ENEMYSIZE, LayerType},
+    map::{self, ENEMYSIZE, LayerType, TILESIZE},
     movement::CollisionLayer,
+    screens::GameState,
     utils::tile_to_world,
 };
-use avian2d::prelude::{self as avian, CollisionLayers};
+use avian2d::prelude::{
+    self as avian, CollidingEntities, CollisionEventsEnabled, CollisionLayers, Sensor,
+};
 use bevy::prelude::*;
 use bevy_ecs_tilemap::tiles::{TilePos, TileStorage};
 
 pub fn plugin(app: &mut App) {
-    app.add_observer(apply_rule);
+    app.add_observer(apply_rule).add_systems(
+        Update,
+        (check_enemy_spawn).run_if(in_state(GameState::Running)),
+    );
 }
 #[derive(Reflect, Clone, Copy, Debug)]
 pub enum OnSpawnTrigger {
     Player,
     Tower,
     Collider,
+    Pit,
     Enemy,
 }
 #[derive(Reflect, Event, Debug, Clone, Copy)]
@@ -35,6 +42,10 @@ impl Rule {
             on_spawn,
         }
     }
+}
+#[derive(Component)]
+pub struct Pit {
+    pub can_dash_over: bool,
 }
 fn apply_rule(
     trigger: Trigger<Rule>,
@@ -134,6 +145,21 @@ fn apply_rule(
                 SaveOverride(tile),
             ));
         }
+        OnSpawnTrigger::Pit => {
+            let tile_pos = tile_positions.get(entity).unwrap();
+            let position = tile_to_world(tile_pos, entities_tilemap_translation);
+            commands.entity(entity).insert((
+                Transform::from_translation(position),
+                Pit {
+                    can_dash_over: false,
+                },
+                avian::RigidBody::Static,
+                Sensor,
+                avian::Collider::rectangle(TILESIZE as f32, TILESIZE as f32),
+                CollisionEventsEnabled,
+                CollidingEntities::default(),
+            ));
+        }
     };
 }
 #[derive(Component)]
@@ -193,7 +219,7 @@ pub struct Enemy {
 fn enemy_spawn() -> impl Bundle {
     (
         Enemy { speed: 3000. },
-        animation::animation_bundle(EnemyAnimation::Idle),
+        animation::animation_bundle(EnemyAnimation::Spawn),
         avian::RigidBody::Dynamic,
         avian::LinearVelocity::ZERO,
         CollisionLayers::new(
@@ -207,3 +233,14 @@ fn enemy_spawn() -> impl Bundle {
 }
 #[derive(Component)]
 pub struct Flag;
+fn check_enemy_spawn(mut enemies: Query<(&mut EnemyAnimation, &Sprite, &Visibility)>) {
+    for (mut animation, sprite, visibility) in &mut enemies {
+        if *animation == EnemyAnimation::Spawn && *visibility != Visibility::Hidden {
+            if sprite.texture_atlas.as_ref().unwrap().index
+                == animation.as_animation().last_sprite_index()
+            {
+                *animation = EnemyAnimation::Idle;
+            }
+        }
+    }
+}

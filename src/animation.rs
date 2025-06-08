@@ -51,6 +51,7 @@ impl Action for PlayerAnimation {
 }
 #[derive(Component, Clone, PartialEq, Eq, Debug)]
 pub enum EnemyAnimation {
+    Spawn,
     Idle,
     Running,
     Explode,
@@ -59,10 +60,11 @@ pub enum EnemyAnimation {
 impl Action for EnemyAnimation {
     fn as_animation(&self) -> AnimationConfig {
         match self {
+            EnemyAnimation::Spawn => AnimationConfig::new(13..16, 5),
             EnemyAnimation::Idle => AnimationConfig::new(0..2, 2),
-            EnemyAnimation::Running => AnimationConfig::new(2..7, 8),
-            EnemyAnimation::Explode => AnimationConfig::new(7..13, 5),
-            EnemyAnimation::DashTargeted => AnimationConfig::new(0..1, 5),
+            EnemyAnimation::Running => AnimationConfig::new(2..6, 8),
+            EnemyAnimation::Explode => AnimationConfig::new(6..13, 7),
+            EnemyAnimation::DashTargeted => AnimationConfig::new(0..2, 5),
         }
     }
 }
@@ -89,6 +91,9 @@ impl AnimationConfig {
         } else {
             false
         }
+    }
+    pub fn last_sprite_index(&self) -> usize {
+        self.index.end - 1
     }
 }
 fn execute_animations(time: Res<Time>, mut query: Query<(&mut AnimationConfig, &mut Sprite)>) {

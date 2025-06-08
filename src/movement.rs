@@ -2,7 +2,7 @@ use std::{f32::consts::PI, time::Duration};
 
 use avian2d::{
     math::Vector,
-    prelude::{Gravity, LinearVelocity, PhysicsLayer},
+    prelude::{CollidingEntities, Gravity, LinearVelocity, PhysicsLayer},
 };
 use bevy::{
     color::palettes::tailwind::{PURPLE_400, RED_400, YELLOW_400},
@@ -14,8 +14,8 @@ use crate::{
     MainCamera,
     animation::{AnimationConfig, EnemyAnimation, PlayerAnimation},
     combat::{DashTargetedBy, DashTargeting, Tame},
-    editor::EditorMeta,
-    entity::{Enemy, Player, PlayerMode},
+    editor::{EditorEvents, EditorMeta},
+    entity::{Enemy, Pit, Player, PlayerMode},
     map::{MousePosition, Textures},
     screens::GameState,
 };
@@ -46,7 +46,14 @@ pub fn plugin(app: &mut App) {
         )
         .add_systems(
             Update,
-            (movement, move_camera, check_dash, enemy_movement, dash_ui)
+            (
+                movement,
+                move_camera,
+                check_dash,
+                enemy_movement,
+                dash_ui,
+                check_pits,
+            )
                 .run_if(in_state(GameState::Running)),
         );
 }
@@ -164,6 +171,11 @@ pub fn enemy_movement(
     for (transform, mut linear_velocity, mut animation_config, mut enemy_animation, enemy) in
         &mut enemies
     {
+        if enemy_animation.eq(&EnemyAnimation::Explode)
+            || enemy_animation.eq(&EnemyAnimation::DashTargeted)
+        {
+            continue;
+        }
         let delta = player.translation().xy() - transform.translation.xy();
         if delta.length() > 100. {
             linear_velocity.0 = Vec2::ZERO;
@@ -184,8 +196,7 @@ pub fn enemy_movement(
         animation_config.flip_sprites = delta.x < 0.;
 
         let normalized = delta.normalize();
-        println!("add velocity {normalized:?}");
-        linear_velocity.0 = normalized * delta_time * enemy.speed;
+        linear_velocity.0 = (linear_velocity.0 + normalized * delta_time * enemy.speed) / 2.;
     }
 }
 const MOVEMENT_RECT: Rect = Rect {
@@ -199,7 +210,7 @@ fn dash(
     players: Single<(&mut LinearVelocity, &GlobalTransform, &Children)>,
     mut player_comp: Query<(Entity, &mut PlayerAnimation, &Player)>,
     mut enemies: Query<
-        (Entity, &GlobalTransform, &mut EnemyAnimation),
+        (Entity, &GlobalTransform, &mut EnemyAnimation, &Visibility),
         (With<Enemy>, Without<Player>),
     >,
 ) {
@@ -216,16 +227,17 @@ fn dash(
         let player_pos = transform.translation().xy();
         let closest_enemy = enemies
             .iter_mut()
-            .filter(|(_, enemy, animation)| {
-                enemy_pos(enemy).distance(player_pos) <= DASH_RADIUS
+            .filter(|(_, enemy, animation, visible)| {
+                *visible != Visibility::Hidden
+                    && enemy_pos(enemy).distance(player_pos) <= DASH_RADIUS
                     && !animation.eq(&EnemyAnimation::Explode)
             })
-            .min_by(|(_, enemy, _), (_, enemy2, _)| {
+            .min_by(|(_, enemy, _, _), (_, enemy2, _, _)| {
                 let d1 = enemy_pos(enemy).distance_squared(dash_point);
                 let d2 = enemy_pos(enemy2).distance_squared(dash_point);
                 d1.total_cmp(&d2)
             });
-        let Some((enemy_e, closest_transform, mut closest_animation)) = closest_enemy else {
+        let Some((enemy_e, closest_transform, mut closest_animation, _)) = closest_enemy else {
             return;
         };
         if enemy_pos(closest_transform).distance_squared(dash_point)
@@ -263,7 +275,9 @@ fn check_dash(
     {
         if animation.eq(&PlayerAnimation::Dash) {
             let (e, _velo) = players.get_mut(parent.0).unwrap();
-            let DashTargeting(target_e) = dash_target.unwrap();
+            let Some(DashTargeting(target_e)) = dash_target else {
+                continue;
+            };
             let player_tr = transforms.get(e).unwrap();
             let enemy_tr = transforms.get(*target_e).unwrap();
             if player_tr.translation.distance(enemy_tr.translation) < 20. {
@@ -296,9 +310,7 @@ fn dash_ui(
         _ => match &player.mode {
             PlayerMode::Active(_timer) => PURPLE_400,
             PlayerMode::Normal => YELLOW_400,
-            PlayerMode::Tired(timer) => {
-                YELLOW_400.with_alpha(timer.elapsed_secs() / TIRED_TIME.as_secs_f32() / 2.)
-            }
+            PlayerMode::Tired(timer) => RED_400.with_alpha(timer.fraction_remaining() / 2.),
         },
     };
     my_gizmos.arc_2d(
@@ -307,4 +319,22 @@ fn dash_ui(
         delta.length(),
         color,
     );
+}
+
+fn check_pits(
+    player: Single<(&ChildOf, &PlayerAnimation), With<Player>>,
+    pits: Query<(&CollidingEntities, &Pit), (With<Pit>, Changed<CollidingEntities>)>,
+    mut event_writer: EventWriter<EditorEvents>,
+) {
+    let (player, animation) = *player;
+    for (colliding_entities, pit) in &pits {
+        if pit.can_dash_over
+            && (*animation == PlayerAnimation::Dash || *animation == PlayerAnimation::DashSprint)
+        {
+            continue;
+        }
+        if colliding_entities.contains(&player.0) {
+            event_writer.write(EditorEvents::RespawnPlayer);
+        }
+    }
 }

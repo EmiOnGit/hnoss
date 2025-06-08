@@ -1,4 +1,6 @@
 use crate::{
+    MainCamera,
+    animation::EnemyAnimation,
     editor::{EditorMeta, RemoveOnLevelSwap},
     entity::{Enemy, Player, PlayerMode, Tower},
     io::SaveFile,
@@ -7,7 +9,9 @@ use crate::{
     screens::GameState,
 };
 use bevy::{color::palettes::tailwind::PURPLE_50, prelude::*};
+
 pub const ENEMY_EXPLOSION_RADIUS: f32 = 55.;
+pub const TRAUMA: f32 = 1.0; // Trauma intensity 
 pub fn plugin(app: &mut App) {
     app.add_systems(
         Update,
@@ -16,6 +20,7 @@ pub fn plugin(app: &mut App) {
             check_tower,
             update_player_mode,
             update_explosion_indicator,
+            screen_shake,
         )
             .run_if(in_state(GameState::Running)),
     );
@@ -51,10 +56,10 @@ fn update_player_mode(
 }
 fn despawn_enemies(
     mut commands: Commands,
-    enemies: Query<(Entity, &Transform, &Sprite), With<Enemy>>,
-    mut towers: Query<(&mut Tower, &mut Visibility, &Transform)>,
+    mut enemies: Query<(&mut Visibility, &mut EnemyAnimation, &Transform, &Sprite), With<Enemy>>,
+    mut towers: Query<(&mut Tower, &mut Visibility, &Transform), Without<Enemy>>,
 ) {
-    for (entity, enemy_transform, sprite) in &enemies {
+    for (mut visibility, mut enemy_animation, enemy_transform, sprite) in &mut enemies {
         // 12 is the last sprite of the explode animation of slimes
         // TODO better way
         if sprite.texture_atlas.as_ref().unwrap().index == 12 {
@@ -77,7 +82,9 @@ fn despawn_enemies(
                     tower.set_active(3.);
                 }
             }
-            commands.entity(entity).despawn();
+            *enemy_animation = EnemyAnimation::Spawn;
+
+            *visibility = Visibility::Hidden;
         }
     }
 }
@@ -149,7 +156,6 @@ fn check_tower(
         editor_meta.current_level = handle;
     }
 }
-
 #[derive(Component, Debug)]
 #[relationship_target(relationship = DashTargeting)]
 pub struct DashTargetedBy(Entity);
@@ -157,3 +163,42 @@ pub struct DashTargetedBy(Entity);
 #[derive(Component, Debug)]
 #[relationship(relationship_target = DashTargetedBy)]
 pub struct DashTargeting(pub Entity);
+
+#[derive(Component)]
+pub struct ScreenShake {
+    trauma: f32,
+}
+impl ScreenShake {
+    pub fn new(trauma: f32) -> Self {
+        ScreenShake {
+            trauma: trauma.clamp(0.0, 1.0),
+        }
+    }
+}
+
+fn screen_shake(
+    mut commands: Commands,
+    time: Res<Time>,
+    query: Single<(Entity, &mut Transform, &mut ScreenShake), With<MainCamera>>,
+) {
+    const CAMERA_DECAY_RATE: f32 = 0.9; // Adjust this for smoother or snappier decay
+    const TRAUMA_DECAY_SPEED: f32 = 0.7; // How fast trauma decays
+    let (e, mut transform, mut screen_shake) = query.into_inner();
+    let shake = screen_shake.trauma * screen_shake.trauma;
+    let angle = (50. * shake).sin().to_radians();
+    if shake > 0.0 {
+        let rotation = Quat::from_rotation_z(angle);
+        transform.rotation = transform
+            .rotation
+            .interpolate_stable(&(transform.rotation.mul_quat(rotation)), CAMERA_DECAY_RATE);
+    } else {
+        transform.rotation = transform.rotation.interpolate_stable(&Quat::IDENTITY, 0.1);
+        if transform.rotation.angle_between(Quat::IDENTITY) < 0.001 {
+            transform.rotation = Quat::IDENTITY;
+            commands.entity(e).remove::<ScreenShake>();
+        }
+    }
+    // Decay the trauma over time
+    screen_shake.trauma -= TRAUMA_DECAY_SPEED * time.delta_secs();
+    screen_shake.trauma = screen_shake.trauma.clamp(0.0, 1.0);
+}
