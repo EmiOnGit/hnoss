@@ -13,6 +13,7 @@ use avian2d::prelude::RigidBody;
 use bevy::asset::AssetMetaCheck;
 use bevy::prelude::*;
 use screens::GameState;
+
 fn main() {
     App::new().add_plugins(app_plugin).run();
 }
@@ -50,10 +51,10 @@ fn init_camera(mut commands: Commands) {
     commands.spawn((
         Camera2d,
         Camera {
-            hdr: true,
+            // hdr: true,
             ..default()
         },
-        Projection::Orthographic(projection),
+        Projection::Orthographic(projection.clone()),
         MainCamera,
         RigidBody::Kinematic,
     ));

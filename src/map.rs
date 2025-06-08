@@ -4,7 +4,7 @@ use crate::{
     MainCamera,
     asset_loading::LoadResource,
     editor::{EditorEvents, RemoveOnLevelSwap, spawn_tiled},
-    entity::{self, OnSpawnTrigger, Player, Rule},
+    entity::{self, OnSpawnTrigger, Player, Portal, Rule},
     io::{self, SaveFile, Tile},
     map,
     movement::DASH_RADIUS,
@@ -20,7 +20,7 @@ use bevy_ecs_tilemap::{
     TilemapBundle,
     anchor::TilemapAnchor,
     map::{TilemapSize, TilemapTexture, TilemapTileSize, TilemapType},
-    tiles::{TilePos, TileStorage},
+    tiles::{TilePos, TileStorage, TileTextureIndex},
 };
 
 /// Tilesize of a single tile in the sheet in pixel.
@@ -46,7 +46,10 @@ pub fn plugin(app: &mut App) {
         .init_asset_loader::<io::SaveFileAssetLoader>()
         .init_asset::<io::SaveFile>()
         .init_resource::<MousePosition>()
-        .add_systems(Update, (update_mouse_position, load_level))
+        .add_systems(
+            Update,
+            (update_mouse_position, load_level, check_portal_activation),
+        )
         .add_systems(OnEnter(GameState::Running), init_map)
         .load_resource::<Textures>();
 }
@@ -195,6 +198,7 @@ impl FromWorld for Textures {
                                 Rule::new(0, OnSpawnTrigger::Tower, false),
                                 Rule::new(1, OnSpawnTrigger::Player, false),
                                 Rule::new(2, OnSpawnTrigger::Enemy, false),
+                                Rule::new(3, OnSpawnTrigger::Portal, true),
                             ],
                         },
                     );
@@ -360,5 +364,13 @@ pub fn spawn_tile(
     };
     if let Some(rule) = rule {
         commands.trigger_targets(*rule, e);
+    }
+}
+fn check_portal_activation(mut portals: Query<(&mut TileTextureIndex, &Portal), Changed<Portal>>) {
+    for (mut index, portal) in &mut portals {
+        *index = match portal {
+            Portal::Closed => TileTextureIndex(3),
+            Portal::Open => TileTextureIndex(4),
+        }
     }
 }

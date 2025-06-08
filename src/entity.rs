@@ -27,6 +27,7 @@ pub enum OnSpawnTrigger {
     Collider,
     Pit,
     Enemy,
+    Portal,
 }
 #[derive(Reflect, Event, Debug, Clone, Copy)]
 pub struct Rule {
@@ -97,10 +98,11 @@ fn apply_rule(
             let player_position = tile_to_world(tile_pos, entities_tilemap_translation);
             commands
                 .spawn((
+                    Visibility::Inherited,
                     RemoveOnLevelSwap,
                     avian::RigidBody::Kinematic,
                     avian::Collider::rectangle(5.0, 5.0),
-                    Transform::from_translation(player_position),
+                    Transform::from_translation(player_position + Vec3::Z),
                 ))
                 .add_child(entity);
             info!("spawn player");
@@ -160,6 +162,19 @@ fn apply_rule(
                 CollidingEntities::default(),
             ));
         }
+        OnSpawnTrigger::Portal => {
+            let tile_pos = tile_positions.get(entity).unwrap();
+            let position = tile_to_world(tile_pos, entities_tilemap_translation);
+            commands.entity(entity).insert((
+                Transform::from_translation(position),
+                Portal::Closed,
+                avian::RigidBody::Static,
+                Sensor,
+                avian::Collider::rectangle(TILESIZE as f32, TILESIZE as f32),
+                CollisionEventsEnabled,
+                CollidingEntities::default(),
+            ));
+        }
     };
 }
 #[derive(Component)]
@@ -187,9 +202,15 @@ fn tower_spawn() -> impl Bundle {
         AnimationConfig::new(0..4, 2),
     )
 }
+#[derive(Component, PartialEq, Eq)]
+pub enum Portal {
+    Closed,
+    Open,
+}
 #[derive(Component)]
 pub struct Player {
     pub speed: f32,
+    pub dash_decrease: f32,
     pub mode: PlayerMode,
 }
 pub enum PlayerMode {
@@ -201,6 +222,7 @@ impl Player {
     pub fn new(speed: f32) -> Player {
         Player {
             speed,
+            dash_decrease: 0.01,
             mode: PlayerMode::Normal,
         }
     }

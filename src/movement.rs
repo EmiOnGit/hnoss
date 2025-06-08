@@ -13,21 +13,20 @@ use bevy::{
 use crate::{
     MainCamera,
     animation::{AnimationConfig, EnemyAnimation, PlayerAnimation},
-    combat::{DashTargetedBy, DashTargeting, ScreenShake, Tame},
+    combat::{DashTargetedBy, DashTargeting, Tame},
     editor::{EditorEvents, EditorMeta},
-    entity::{Enemy, Pit, Player, PlayerMode},
+    entity::{Enemy, Pit, Player, PlayerMode, Portal},
+    io::SaveFile,
     map::{MousePosition, Textures},
     screens::GameState,
 };
 pub const DASH_RADIUS: f32 = 70.;
 pub const DASH_RECOGNITION_RADIUS: f32 = 50.;
 pub const DASH_IMPULSE: f32 = 350.;
-pub const DASH_DECLINE: f32 = 0.90;
 pub const TIRED_TIME: Duration = Duration::from_secs(3);
 pub const ACTIVE_TIME: Duration = Duration::from_secs(2);
 pub fn plugin(app: &mut App) {
     app.add_plugins(avian2d::PhysicsPlugins::default().with_length_unit(1.))
-        // .add_plugins(avian2d::debug_render::PhysicsDebugPlugin::default())
         .insert_resource(Gravity(Vector::ZERO))
         .add_systems(
             Update,
@@ -52,7 +51,7 @@ pub fn plugin(app: &mut App) {
                 check_dash,
                 enemy_movement,
                 dash_ui,
-                check_pits,
+                check_collisions,
             )
                 .run_if(in_state(GameState::Running)),
         );
@@ -208,15 +207,14 @@ fn dash(
     mut commands: Commands,
     mouse_position: Res<MousePosition>,
     players: Single<(&mut LinearVelocity, &GlobalTransform, &Children)>,
-    cam: Single<Entity, With<MainCamera>>,
     mut player_comp: Query<(Entity, &mut PlayerAnimation, &Player)>,
     mut enemies: Query<
         (Entity, &GlobalTransform, &mut EnemyAnimation, &Visibility),
         (With<Enemy>, Without<Player>),
     >,
 ) {
-    let enemy_pos = |trans: &GlobalTransform| trans.translation().xy() - Vec2::Y * 8.;
-    let (mut velocity, transform, children) = players.into_inner();
+    let enemy_pos = |trans: &GlobalTransform| trans.translation().xy();
+    let (mut velocity, global_transform, children) = players.into_inner();
     let Some(child) = children.first() else {
         return;
     };
@@ -225,7 +223,7 @@ fn dash(
     };
     if !animation.eq(&PlayerAnimation::Dash) && !matches!(player.mode, PlayerMode::Tired(_)) {
         let dash_point = mouse_position.dash_point;
-        let player_pos = transform.translation().xy();
+        let player_pos = global_transform.translation().xy();
         let closest_enemy = enemies
             .iter_mut()
             .filter(|(_, enemy, animation, visible)| {
@@ -246,10 +244,10 @@ fn dash(
         {
             return;
         }
-        commands
-            .entity(cam.into_inner())
-            .insert(ScreenShake::new(0.08, 300., 0.5));
         let distance = enemy_pos(closest_transform) - player_pos;
+        println!("{player_pos:?}");
+        println!("{:?}", enemy_pos(closest_transform));
+        println!("dir{}", distance.normalize());
         commands.entity(entity).insert(DashTargeting(enemy_e));
         *animation = PlayerAnimation::Dash;
         *closest_animation = EnemyAnimation::DashTargeted;
@@ -293,7 +291,7 @@ fn check_dash(
             }
         } else if animation.eq(&PlayerAnimation::DashSprint) {
             let (_e, mut velo) = players.get_mut(parent.0).unwrap();
-            velo.0 *= DASH_DECLINE * (1. - delta).max(0.);
+            velo.0 *= player.dash_decrease.powf(delta);
             if velo.0.length_squared() < player.speed * player.speed * delta * delta {
                 *animation = PlayerAnimation::Running;
             }
@@ -325,9 +323,12 @@ fn dash_ui(
     );
 }
 
-fn check_pits(
+fn check_collisions(
     player: Single<(&ChildOf, &PlayerAnimation), With<Player>>,
-    pits: Query<(&CollidingEntities, &Pit), (With<Pit>, Changed<CollidingEntities>)>,
+    pits: Query<(&CollidingEntities, &Pit), Changed<CollidingEntities>>,
+    portals: Query<(&CollidingEntities, &Portal), (Without<Pit>, Changed<CollidingEntities>)>,
+    mut editor_meta: ResMut<EditorMeta>,
+    asset_server: Res<AssetServer>,
     mut event_writer: EventWriter<EditorEvents>,
 ) {
     let (player, animation) = *player;
@@ -339,6 +340,16 @@ fn check_pits(
         }
         if colliding_entities.contains(&player.0) {
             event_writer.write(EditorEvents::RespawnPlayer);
+        }
+    }
+    for (colliding_entities, _portal) in &portals {
+        if colliding_entities.contains(&player.0) {
+            editor_meta.current_level_index += 1;
+            let number = editor_meta.current_level_index.to_string();
+
+            let handle =
+                asset_server.load::<SaveFile>(String::from("level/") + "level" + &number + ".ron");
+            editor_meta.current_level = handle;
         }
     }
 }

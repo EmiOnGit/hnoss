@@ -1,3 +1,4 @@
+use avian2d::prelude::LinearVelocity;
 use bevy::{
     color::palettes::{self, tailwind::BLUE_500},
     input::mouse::{MouseScrollUnit, MouseWheel},
@@ -11,7 +12,7 @@ use bevy_ecs_tilemap::{
 
 use crate::{
     GameState, MainCamera,
-    animation::EnemyAnimation,
+    animation::{EnemyAnimation, PlayerAnimation},
     combat::{ScreenShake, TRAUMA},
     entity::{Enemy, Player, PlayerMode},
     io::{self, SaveFile, Tile},
@@ -174,9 +175,9 @@ fn process_editor_events(
         &LayerType,
         Option<&SaveOverride>,
     )>,
-    mut players: Query<(&mut Player, &ChildOf, &SaveOverride)>,
+    mut players: Query<(&mut Player, &mut PlayerAnimation, &ChildOf, &SaveOverride)>,
     mut enemies: Query<(&mut Visibility, &mut EnemyAnimation), With<Enemy>>,
-    mut transforms: Query<&mut Transform>,
+    mut parent_player: Query<(&mut LinearVelocity, &mut Transform)>,
     override_tiles: Query<(Entity, &LayerType, &SaveOverride, Option<&ChildOf>)>,
     mut tile_map: Query<(Entity, &mut TileStorage, &LayerType)>,
 ) {
@@ -292,22 +293,24 @@ fn process_editor_events(
                 }
             }
             EditorEvents::RespawnPlayer => {
-                for (mut player, parent, tile) in &mut players {
+                for (mut player, mut animation, parent, tile) in &mut players {
+                    let Ok((mut velo, mut transform)) = parent_player.get_mut(parent.0) else {
+                        continue;
+                    };
+                    *animation = PlayerAnimation::Idle;
                     player.mode = PlayerMode::Normal;
                     let translation = tile_to_world(
                         &tile.0.pos.into(),
                         TILEMAP_OFFSET.extend(LayerType::Entities.z()),
                     );
-                    let Ok(mut transform) = transforms.get_mut(parent.0) else {
-                        continue;
-                    };
                     commands
                         .entity(*cam)
                         .insert(ScreenShake::new(TRAUMA, 50., 1.));
                     transform.translation = translation;
+                    **velo = Vec2::ZERO;
                 }
                 for (mut visibility, mut mode) in &mut enemies {
-                    *visibility = Visibility::Visible;
+                    *visibility = Visibility::Inherited;
                     *mode = EnemyAnimation::Spawn;
                 }
             }

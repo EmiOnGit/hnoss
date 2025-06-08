@@ -1,9 +1,8 @@
 use crate::{
     MainCamera,
     animation::EnemyAnimation,
-    editor::{EditorMeta, RemoveOnLevelSwap},
-    entity::{Enemy, Player, PlayerMode, Tower},
-    io::SaveFile,
+    editor::RemoveOnLevelSwap,
+    entity::{Enemy, Player, PlayerMode, Portal, Tower},
     map::Textures,
     movement::TIRED_TIME,
     screens::GameState,
@@ -78,7 +77,7 @@ fn despawn_enemies(
                         .distance(tower_transform.translation)
                         < ENEMY_EXPLOSION_RADIUS
                 {
-                    *tower_visibility = Visibility::Visible;
+                    *tower_visibility = Visibility::Inherited;
                     tower.set_active(3.);
                 }
             }
@@ -117,8 +116,7 @@ fn update_explosion_indicator(
 fn check_tower(
     mut towers: Query<(&mut Tower, &mut Visibility)>,
     time: Res<Time>,
-    asset_server: Res<AssetServer>,
-    mut editor_meta: ResMut<EditorMeta>,
+    mut portals: Query<&mut Portal>,
 ) {
     let mut all_lit = !towers.is_empty() && towers.iter().any(|(tower, _)| tower.activatable);
 
@@ -138,22 +136,9 @@ fn check_tower(
         for (mut tower, _) in &mut towers {
             tower.activatable = false;
         }
-        let count = towers.iter().count();
-        println!(
-            "all lit on level {} with {} towers",
-            editor_meta.current_level_index, count
-        );
-        if editor_meta.current_level_index > 20 {
-            println!("WON");
-            return;
+        for mut portal in &mut portals {
+            *portal = Portal::Open;
         }
-
-        editor_meta.current_level_index += 1;
-        let number = editor_meta.current_level_index.to_string();
-
-        let handle =
-            asset_server.load::<SaveFile>(String::from("level/") + "level" + &number + ".ron");
-        editor_meta.current_level = handle;
     }
 }
 #[derive(Component, Debug)]

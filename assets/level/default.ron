@@ -1,16 +1,4 @@
 (layers: {
-    Entities: (tiles: [
-        (pos: (13, 8), index: 1),
-        (pos: (11, 7), index: 0),
-        (pos: (9, 11), index: 0),
-        (pos: (6, 7), index: 0),
-        (pos: (3, 11), index: 0),
-        (pos: (3, 8), index: 2),
-        (pos: (8, 3), index: 2),
-        (pos: (9, 8), index: 2),
-        (pos: (5, 3), index: 2),
-        (pos: (7, 1), index: 2),
-    ]),
     Bg: (tiles: [
         (pos: (0, 4), index: 3),
         (pos: (0, 5), index: 3),
@@ -302,5 +290,18 @@
         (pos: (9, 11), index: 8),
         (pos: (6, 6), index: 12),
         (pos: (9, 10), index: 12),
+    ]),
+    Entities: (tiles: [
+        (pos: (1, 10), index: 3),
+        (pos: (13, 8), index: 1),
+        (pos: (11, 7), index: 0),
+        (pos: (9, 11), index: 0),
+        (pos: (6, 7), index: 0),
+        (pos: (3, 11), index: 0),
+        (pos: (3, 8), index: 2),
+        (pos: (8, 3), index: 2),
+        (pos: (9, 8), index: 2),
+        (pos: (5, 3), index: 2),
+        (pos: (7, 1), index: 2),
     ]),
 })
