@@ -35,15 +35,20 @@ pub fn plugin(app: &mut App) {
         .add_event::<UiRespawnTrigger>()
         .add_observer(ui_tile_selection_update)
         .add_observer(init_ui_overview)
+        .add_observer(show_control_image)
         .add_systems(
             Update,
             (|mut commands: Commands| commands.trigger(UiRespawnTrigger::OverviewRespawn))
                 .run_if(input_just_released(KeyCode::KeyP).and(in_state(GameState::Running))),
         )
+        .add_systems(OnEnter(GameState::Running), |mut commands: Commands| {
+            commands.trigger(UiRespawnTrigger::ShowControlImage)
+        })
         .add_systems(
             Update,
             (
                 debug,
+                update_control_images,
                 process_editor_events,
                 tile_button_system,
                 overview_button_system,
@@ -330,6 +335,51 @@ fn process_editor_events(
         }
     }
 }
+fn update_control_images(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut control_images: Query<(Entity, &mut ControlImage)>,
+) {
+    let delta = time.delta();
+    for (e, mut image) in &mut control_images {
+        image.0.tick(delta);
+        if image.0.finished() {
+            commands.entity(e).despawn();
+        }
+    }
+}
+#[derive(Component)]
+struct ControlImage(Timer);
+fn show_control_image(
+    trigger: Trigger<UiRespawnTrigger>,
+    mut commands: Commands,
+    textures: Res<map::Textures>,
+    mut control_images: Query<&mut ControlImage>,
+) {
+    if !matches!(trigger.event(), UiRespawnTrigger::ShowControlImage) {
+        return;
+    }
+    let timer = Timer::from_seconds(3., TimerMode::Once);
+    if !control_images.is_empty() {
+        for mut control_image in &mut control_images {
+            control_image.0 = timer.clone();
+        }
+        return;
+    }
+    commands.spawn((
+        Node {
+            left: Val::Percent(70.),
+            width: Val::Percent(30.),
+            height: Val::Percent(10.),
+            align_items: AlignItems::Center,
+            top: Val::Percent(80.),
+            ..default()
+        },
+        ControlImage(timer),
+        // BackgroundColor(BLUE_500.into()),
+        children![widget::tile_image(ImageNode::new(textures.keys.clone())),],
+    ));
+}
 #[derive(Component)]
 struct OverviewUiRoot;
 fn init_ui_overview(
@@ -386,6 +436,7 @@ enum UiRespawnTrigger {
     TileSelectionRespawn,
     TileSelectionRemove,
     OverviewRespawn,
+    ShowControlImage,
 }
 #[derive(Component)]
 struct TileSelectionUiRoot;
@@ -399,6 +450,9 @@ fn ui_tile_selection_update(
 ) {
     let event = trigger.event();
     if let UiRespawnTrigger::OverviewRespawn = event {
+        return;
+    }
+    if let UiRespawnTrigger::ShowControlImage = event {
         return;
     }
     // cleanup in case of redrawing

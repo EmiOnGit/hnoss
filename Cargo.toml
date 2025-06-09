@@ -59,7 +59,6 @@ opt-level = 1
 opt-level = 3
 
 [profile.release]
-debug=true
 # Compile the entire crate as one unit.
 # Slows compile times, marginal improvements.
 codegen-units = 1

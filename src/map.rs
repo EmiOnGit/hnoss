@@ -34,6 +34,7 @@ pub const FIRE_TEXTURE_PATH: &str = "fire.png";
 pub const PLAYER_TEXTURE_PATH: &str = "char.png";
 pub const PLAYER_ACTIVE_TEXTURE_PATH: &str = "char_active.png";
 pub const ENEMIES_TEXTURE_PATH: &str = "enemies.png";
+pub const KEYS_TEXTURE: &str = "keys.png";
 const MAIN_MENU_IMAGE: &str = "goblin_splash.jpg";
 pub const TILEMAP_OFFSET: Vec2 = Vec2::new(-100., -100.);
 pub const TILEMAP_ANCHOR: TilemapAnchor = TilemapAnchor::BottomLeft;
@@ -149,6 +150,7 @@ pub struct Textures {
     pub enemy: TexturePack,
     pub fire: TexturePack,
     pub main_menu_image: Handle<Image>,
+    pub keys: Handle<Image>,
 }
 impl FromWorld for Textures {
     fn from_world(world: &mut World) -> Self {
@@ -235,8 +237,10 @@ impl FromWorld for Textures {
                 settings.sampler = ImageSampler::linear();
             },
         );
+        let keys = asset_server.load(KEYS_TEXTURE);
         Textures {
             pack: map,
+            keys,
             player,
             enemy,
             fire,
