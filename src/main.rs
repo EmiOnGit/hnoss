@@ -1,5 +1,6 @@
 mod animation;
 mod asset_loading;
+mod audio;
 mod combat;
 mod editor;
 mod entity;
@@ -42,6 +43,7 @@ fn app_plugin(app: &mut App) {
         movement::plugin,
         animation::plugin,
         asset_loading::plugin,
+        audio::plugin,
         map::plugin,
         editor::plugin,
     ))
