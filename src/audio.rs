@@ -1,4 +1,7 @@
-use bevy::{audio::Volume, prelude::*};
+use bevy::{
+    audio::{PlaybackMode, Volume},
+    prelude::*,
+};
 
 use crate::{
     animation::PlayerAnimation, asset_loading::LoadResource, entity::Portal, screens::GameState,
@@ -23,11 +26,10 @@ fn check_events(
     sound_store: Res<SoundStore>,
 ) {
     if portals.iter().any(|portal| *portal == Portal::Open) {
-        println!("OPENED THE GATE");
         commands.spawn((
             AudioPlayer::new(sound_store.success.clone()),
             PlaybackSettings {
-                mode: bevy::audio::PlaybackMode::Despawn,
+                mode: PlaybackMode::Despawn,
                 volume: Volume::Linear(1.3),
                 speed: 1.2,
                 ..default()
@@ -38,7 +40,7 @@ fn check_events(
         commands.spawn((
             AudioPlayer::new(sound_store.dash.clone()),
             PlaybackSettings {
-                mode: bevy::audio::PlaybackMode::Despawn,
+                mode: PlaybackMode::Despawn,
                 volume: Volume::Linear(1.3),
                 speed: 1.5,
                 ..default()
@@ -52,7 +54,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         PlaybackSettings {
             volume: Volume::Linear(0.0),
             speed: 1.2,
-            mode: bevy::audio::PlaybackMode::Loop,
+            mode: PlaybackMode::Loop,
             ..default()
         },
         MainMusic,
