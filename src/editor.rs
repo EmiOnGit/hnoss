@@ -454,7 +454,7 @@ fn init_ui_overview(
                 align_items: AlignItems::Center,
                 ..default()
             },
-            BackgroundColor(DEAD_BACKGROUND.into()),
+            BackgroundColor(DEAD_BACKGROUND),
             OverviewUiRoot,
             children![
                 widget::overview_button(
