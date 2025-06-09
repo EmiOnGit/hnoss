@@ -1,7 +1,10 @@
 use avian2d::prelude::LinearVelocity;
 use bevy::{
     color::palettes::{self, tailwind::BLUE_500},
-    input::mouse::{MouseScrollUnit, MouseWheel},
+    input::{
+        common_conditions::input_just_released,
+        mouse::{MouseScrollUnit, MouseWheel},
+    },
     picking::hover::HoverMap,
     prelude::*,
 };
@@ -32,9 +35,11 @@ pub fn plugin(app: &mut App) {
         .add_event::<UiRespawnTrigger>()
         .add_observer(ui_tile_selection_update)
         .add_observer(init_ui_overview)
-        .add_systems(OnEnter(GameState::Running), |mut commands: Commands| {
-            commands.trigger(UiRespawnTrigger::OverviewRespawn)
-        })
+        .add_systems(
+            Update,
+            (|mut commands: Commands| commands.trigger(UiRespawnTrigger::OverviewRespawn))
+                .run_if(input_just_released(KeyCode::KeyP).and(in_state(GameState::Running))),
+        )
         .add_systems(
             Update,
             (

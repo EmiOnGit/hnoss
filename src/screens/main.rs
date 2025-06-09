@@ -24,6 +24,7 @@ fn spawn_main_menu(mut commands: Commands, textures: Res<Textures>) {
                 },
                 ImageNode::new(textures.main_menu_image.clone())
             ),
+            widget::header("Hnoss"),
             widget::button("Play", enter_gameplay_screen),
             widget::button("Credits", open_credits_menu),
             widget::button("Exit", exit_app),
@@ -42,6 +43,7 @@ fn spawn_main_menu(mut commands: Commands, textures: Res<Textures>) {
                 },
                 ImageNode::new(textures.main_menu_image.clone()),
             ),
+            widget::header("Hnoss"),
             widget::button("Play", enter_gameplay_screen),
             widget::button("Credits", open_credits_menu),
         ],

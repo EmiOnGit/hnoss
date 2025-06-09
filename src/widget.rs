@@ -72,7 +72,7 @@ where
                     children![(
                         Name::new("Button Text"),
                         Text(text),
-                        TextFont::from_font_size(40.0),
+                        TextFont::from_font_size(30.0),
                         // Don't bubble picking events from the text up to the button.
                         Pickable::IGNORE,
                     )],

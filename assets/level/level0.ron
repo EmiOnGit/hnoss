@@ -1,8 +1,4 @@
 (layers: {
-    Fg: (tiles: [
-        (pos: (11, 6), index: 8),
-        (pos: (11, 10), index: 8),
-    ]),
     Entities: (tiles: [
         (pos: (19, 8), index: 2),
         (pos: (2, 8), index: 0),
@@ -31,7 +27,6 @@
         (pos: (10, 9), index: 6),
         (pos: (14, 8), index: 3),
         (pos: (11, 6), index: 3),
-        (pos: (12, 17), index: 4),
         (pos: (12, 10), index: 3),
         (pos: (12, 9), index: 3),
         (pos: (15, 8), index: 3),
@@ -159,10 +154,6 @@
         (pos: (10, 10), index: 3),
         (pos: (8, 10), index: 3),
         (pos: (9, 10), index: 3),
-        (pos: (0, 6), index: 0),
-        (pos: (0, 7), index: 0),
-        (pos: (0, 8), index: 0),
-        (pos: (0, 9), index: 0),
         (pos: (8, 11), index: 5),
         (pos: (9, 11), index: 5),
         (pos: (10, 11), index: 5),
@@ -203,6 +194,19 @@
         (pos: (14, 6), index: 9),
         (pos: (13, 6), index: 9),
         (pos: (12, 6), index: 9),
-        (pos: (0, 5), index: 9),
+        (pos: (0, 5), index: 13),
+        (pos: (0, 6), index: 13),
+        (pos: (0, 7), index: 13),
+        (pos: (0, 8), index: 13),
+        (pos: (0, 9), index: 13),
+        (pos: (21, 5), index: 13),
+        (pos: (21, 6), index: 13),
+        (pos: (21, 7), index: 13),
+        (pos: (21, 8), index: 13),
+        (pos: (21, 9), index: 13),
+    ]),
+    Fg: (tiles: [
+        (pos: (11, 6), index: 8),
+        (pos: (11, 10), index: 8),
     ]),
 })

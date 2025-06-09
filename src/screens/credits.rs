@@ -37,6 +37,7 @@ fn assets() -> impl Bundle {
     grid(vec![
         ["sprites", "CC0 by Emanuel Boehm"],
         ["images", "CC0 by Emanuel Boehm"],
+        ["music", "CC0 by Emanuel Boehm"],
     ])
 }
 
