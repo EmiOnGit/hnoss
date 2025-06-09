@@ -4,7 +4,7 @@ use crate::{
     editor::RemoveOnLevelSwap,
     entity::{Enemy, Player, PlayerMode, Portal, Tower, TowerCountdown},
     map::Textures,
-    movement::TIRED_TIME,
+    movement::{ACTIVE_TIME, TIRED_TIME},
     screens::GameState,
 };
 use bevy::{color::palettes::tailwind::PURPLE_50, prelude::*};
@@ -80,7 +80,7 @@ fn despawn_enemies(
                 {
                     *tower_visibility = Visibility::Inherited;
                     tower.active = true;
-                    tower_countdown.timer = Some(Timer::from_seconds(3., TimerMode::Once));
+                    tower_countdown.timer = Some(Timer::new(ACTIVE_TIME, TimerMode::Once));
                 }
             }
             *enemy_animation = EnemyAnimation::Spawn;

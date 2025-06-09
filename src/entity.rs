@@ -31,6 +31,7 @@ pub enum OnSpawnTrigger {
     Pit,
     Enemy,
     Portal,
+    GameFinishedPlatform,
 }
 #[derive(Reflect, Event, Debug, Clone, Copy)]
 pub struct Rule {
@@ -197,13 +198,29 @@ fn apply_rule(
                 CollidingEntities::default(),
             ));
         }
+        OnSpawnTrigger::GameFinishedPlatform => {
+            let tile_pos = tile_positions.get(entity).unwrap();
+            let position = tile_to_world(tile_pos, entities_tilemap_translation);
+            commands.entity(entity).insert((
+                Transform::from_translation(position),
+                Portal::Open,
+                avian::RigidBody::Static,
+                Sensor,
+                avian::Collider::rectangle(TILESIZE as f32, TILESIZE as f32),
+                CollisionEventsEnabled,
+                CollidingEntities::default(),
+            ));
+        }
     };
 }
+
 #[derive(Resource, Default)]
 pub struct TowerCountdown {
     pub timer: Option<Timer>,
     pub level_complete: bool,
 }
+#[derive(Component)]
+pub struct GameFinishPortal;
 #[derive(Component)]
 pub struct Tower {
     // pub active: Option<Timer>,

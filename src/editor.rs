@@ -1,6 +1,7 @@
 use avian2d::prelude::LinearVelocity;
 use bevy::{
-    color::palettes::{self, tailwind::BLUE_500},
+    asset::LoadState,
+    color::palettes::{self},
     input::{
         common_conditions::input_just_released,
         mouse::{MouseScrollUnit, MouseWheel},
@@ -24,7 +25,7 @@ use crate::{
         TILESIZE, convert_to_tile_pos,
     },
     utils::{self, iter_grid_rect, tile_to_world},
-    widget,
+    widget::{self, DEAD_BACKGROUND},
 };
 pub const NORMAL_BUTTON: Color = Color::srgb(0.15, 0.15, 0.15);
 pub const HOVERED_BUTTON: Color = Color::srgb(0.25, 0.25, 0.25);
@@ -34,6 +35,7 @@ pub fn plugin(app: &mut App) {
         .init_resource::<EditorMeta>()
         .add_event::<UiRespawnTrigger>()
         .add_observer(ui_tile_selection_update)
+        .add_observer(draw_deads)
         .add_observer(init_ui_overview)
         .add_observer(show_control_image)
         .add_systems(
@@ -42,7 +44,8 @@ pub fn plugin(app: &mut App) {
                 .run_if(input_just_released(KeyCode::KeyP).and(in_state(GameState::Running))),
         )
         .add_systems(OnEnter(GameState::Running), |mut commands: Commands| {
-            commands.trigger(UiRespawnTrigger::ShowControlImage)
+            commands.trigger(UiRespawnTrigger::ShowControlImage);
+            commands.trigger(UiRespawnTrigger::Deads);
         })
         .add_systems(
             Update,
@@ -50,16 +53,21 @@ pub fn plugin(app: &mut App) {
                 debug,
                 update_control_images,
                 process_editor_events,
-                tile_button_system,
                 overview_button_system,
-                update_scroll_position,
-                update_selected_tile,
+                check_level_loaded,
             )
                 .run_if(in_state(GameState::Running)),
         )
         .add_systems(
             Update,
-            (current_tile_ui, draw_selection_indicator, check_input)
+            (
+                current_tile_ui,
+                tile_button_system,
+                update_selected_tile,
+                draw_selection_indicator,
+                check_input,
+                update_scroll_position,
+            )
                 .run_if(in_state(GameState::Running).and(|meta: Res<EditorMeta>| meta.edit_mode)),
         );
 }
@@ -73,6 +81,7 @@ pub struct EditorMeta {
     pub current_level: Handle<SaveFile>,
     pub current_level_index: usize,
     pub edit_mode: bool,
+    pub deads: usize,
 }
 fn check_input(
     mouse: Res<ButtonInput<MouseButton>>,
@@ -106,6 +115,42 @@ fn check_input(
             event_writer.write(EditorEvents::SpawnTiles(start_pos, current_pos));
         }
         editor_meta.current_selection_start = None;
+    }
+}
+#[derive(Component)]
+struct PlayerDeadsUiRoot;
+fn draw_deads(
+    trigger: Trigger<UiRespawnTrigger>,
+    mut commands: Commands,
+    editor_meta: Res<EditorMeta>,
+    mut texts: Query<&mut Text>,
+    ui_root: Option<Single<&Children, With<PlayerDeadsUiRoot>>>,
+) {
+    if !matches!(trigger.event(), UiRespawnTrigger::Deads) {
+        return;
+    }
+    if let Some(ui_root) = &ui_root {
+        for child in ui_root.as_ref() {
+            let mut text = texts.get_mut(*child).unwrap();
+            text.0 = editor_meta.deads.to_string();
+        }
+    } else {
+        commands.spawn((
+            Node {
+                left: Val::Percent(5.),
+                // right: Val::Percent(10.),
+                width: Val::Percent(10.),
+                height: Val::Percent(10.),
+                top: Val::Percent(5.),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                flex_direction: FlexDirection::Column,
+                position_type: PositionType::Absolute,
+                ..default()
+            },
+            PlayerDeadsUiRoot,
+            children![widget::player_dead(editor_meta.deads),],
+        ));
     }
 }
 fn draw_selection_indicator(
@@ -321,6 +366,11 @@ fn process_editor_events(
                         &tile.0.pos.into(),
                         TILEMAP_OFFSET.extend(LayerType::Entities.z() + 1.),
                     );
+                    // this is just a hack because the respawn event sometimes fires 2 times
+                    if translation.distance(transform.translation) > 1. {
+                        editor_meta.deads += 1;
+                        commands.trigger(UiRespawnTrigger::Deads);
+                    }
                     commands
                         .entity(*cam)
                         .insert(ScreenShake::new(TRAUMA, 50., 1.));
@@ -359,7 +409,7 @@ fn show_control_image(
     if !matches!(trigger.event(), UiRespawnTrigger::ShowControlImage) {
         return;
     }
-    let timer = Timer::from_seconds(3., TimerMode::Once);
+    let timer = Timer::from_seconds(5., TimerMode::Once);
     if !control_images.is_empty() {
         for mut control_image in &mut control_images {
             control_image.0 = timer.clone();
@@ -404,7 +454,7 @@ fn init_ui_overview(
                 align_items: AlignItems::Center,
                 ..default()
             },
-            BackgroundColor(BLUE_500.into()),
+            BackgroundColor(DEAD_BACKGROUND.into()),
             OverviewUiRoot,
             children![
                 widget::overview_button(
@@ -437,6 +487,7 @@ enum UiRespawnTrigger {
     TileSelectionRemove,
     OverviewRespawn,
     ShowControlImage,
+    Deads,
 }
 #[derive(Component)]
 struct TileSelectionUiRoot;
@@ -453,6 +504,9 @@ fn ui_tile_selection_update(
         return;
     }
     if let UiRespawnTrigger::ShowControlImage = event {
+        return;
+    }
+    if let UiRespawnTrigger::Deads = event {
         return;
     }
     // cleanup in case of redrawing
@@ -706,5 +760,18 @@ fn debug(
                 camera.clear_color = ClearColorConfig::Custom(BACKGROUND_COLOR);
             }
         }
+    }
+}
+fn check_level_loaded(
+    editor_meta: Res<EditorMeta>,
+    asset_server: Res<AssetServer>,
+    mut event_writer: EventWriter<EditorEvents>,
+) {
+    let state = asset_server.get_load_state(editor_meta.current_level.id());
+    if let Some(LoadState::Failed(failed)) = state {
+        warn!("failed loading level {failed:?}");
+        event_writer.write(EditorEvents::LoadLevel {
+            name: Some("level0".into()),
+        });
     }
 }

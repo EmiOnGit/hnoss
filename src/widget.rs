@@ -1,12 +1,13 @@
 use std::borrow::Cow;
 
 use bevy::{
-    color::palettes::css::{ANTIQUE_WHITE, CRIMSON, PALE_GOLDENROD},
+    color::palettes::css::{CRIMSON, PALE_GOLDENROD},
     ecs::{spawn::SpawnWith, system::IntoObserverSystem},
     prelude::*,
 };
 
 use crate::editor::{NORMAL_BUTTON, OverviewButton, TileButton};
+pub const DEAD_BACKGROUND: Color = Color::srgb_u8(186, 183, 184);
 /// A root UI node that fills the window and centers its content.
 pub fn ui_root(name: impl Into<Cow<'static, str>>) -> impl Bundle {
     (
@@ -120,7 +121,7 @@ pub fn tile_image(image_node: ImageNode) -> impl Bundle {
         Button,
         TileButton,
         image_node,
-        BackgroundColor(ANTIQUE_WHITE.into()),
+        BackgroundColor(DEAD_BACKGROUND.into()),
         Outline::new(Val::Px(4.0), Val::ZERO, NORMAL_BUTTON),
         Pickable {
             should_block_lower: false,
@@ -158,6 +159,28 @@ pub fn header(text: impl Into<String>) -> impl Bundle {
         Name::new("Header"),
         Text(text.into()),
         TextFont::from_font_size(40.0),
+    )
+}
+pub fn player_dead(deads: usize) -> impl Bundle {
+    (
+        Name::new("Player deads"),
+        TextLayout::new_with_justify(JustifyText::Center),
+        Text(deads.to_string()),
+        TextFont::from_font_size(40.0),
+        BackgroundColor(NORMAL_BUTTON),
+        Outline::new(Val::Px(4.0), Val::ZERO, DEAD_BACKGROUND),
+        Pickable {
+            should_block_lower: false,
+            ..default()
+        },
+        Node {
+            align_items: AlignItems::Center,
+            justify_content: JustifyContent::Center,
+            width: Val::Percent(100.),
+            height: Val::Percent(100.),
+            margin: UiRect::all(Val::Px(4.)),
+            ..default()
+        },
     )
 }
 /// A simple text label.

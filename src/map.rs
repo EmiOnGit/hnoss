@@ -41,7 +41,7 @@ pub const TILEMAP_ANCHOR: TilemapAnchor = TilemapAnchor::BottomLeft;
 pub const BACKGROUND_COLOR: Color = Color::srgba_u8(41, 41, 41, 255);
 pub const DEBUG_BACKGROUND_COLOR: Color = Color::srgba_u8(81, 81, 81, 255);
 
-pub const TILEMAP_MAPSIZE: UVec2 = UVec2::new(40, 18);
+pub const TILEMAP_MAPSIZE: UVec2 = UVec2::new(44, 20);
 pub fn plugin(app: &mut App) {
     app.init_resource::<Textures>()
         .add_plugins(bevy_ecs_tilemap::TilemapPlugin)
@@ -204,6 +204,7 @@ impl FromWorld for Textures {
                                 Rule::new(1, OnSpawnTrigger::Enemy, false),
                                 Rule::new(2, OnSpawnTrigger::Portal, true),
                                 Rule::new(3, OnSpawnTrigger::PlayerSpawnPlatform, true),
+                                Rule::new(4, OnSpawnTrigger::GameFinishedPlatform, true),
                             ],
                         },
                     );
@@ -347,6 +348,7 @@ fn load_level(
                     }
                 }
             }
+
             _ => {}
         }
     }
